@@ -36,32 +36,22 @@
 		066193C6155849BC0004DAFE /* IOSCharArray.m in Sources */ = {isa = PBXBuildFile; fileRef = 0661939F155849BC0004DAFE /* IOSCharArray.m */; };
 		066193C7155849BC0004DAFE /* IOSClass.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193A0155849BC0004DAFE /* IOSClass.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		066193C8155849BC0004DAFE /* IOSClass.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193A1155849BC0004DAFE /* IOSClass.m */; };
-		066193C9155849BC0004DAFE /* IOSCollection.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193A2155849BC0004DAFE /* IOSCollection.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		066193CA155849BC0004DAFE /* IOSCollection.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193A3155849BC0004DAFE /* IOSCollection.m */; };
 		066193CB155849BC0004DAFE /* IOSDoubleArray.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193A4155849BC0004DAFE /* IOSDoubleArray.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		066193CC155849BC0004DAFE /* IOSDoubleArray.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193A5155849BC0004DAFE /* IOSDoubleArray.m */; };
 		066193CD155849BC0004DAFE /* IOSFloatArray.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193A6155849BC0004DAFE /* IOSFloatArray.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		066193CE155849BC0004DAFE /* IOSFloatArray.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193A7155849BC0004DAFE /* IOSFloatArray.m */; };
 		066193CF155849BC0004DAFE /* IOSIntArray.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193A8155849BC0004DAFE /* IOSIntArray.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		066193D0155849BC0004DAFE /* IOSIntArray.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193A9155849BC0004DAFE /* IOSIntArray.m */; };
-		066193D1155849BC0004DAFE /* IOSIterator.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193AA155849BC0004DAFE /* IOSIterator.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		066193D2155849BC0004DAFE /* IOSIterator.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193AB155849BC0004DAFE /* IOSIterator.m */; };
-		066193D3155849BC0004DAFE /* IOSList.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193AC155849BC0004DAFE /* IOSList.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		066193D4155849BC0004DAFE /* IOSList.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193AD155849BC0004DAFE /* IOSList.m */; };
 		066193D5155849BC0004DAFE /* IOSLongArray.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193AE155849BC0004DAFE /* IOSLongArray.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		066193D6155849BC0004DAFE /* IOSLongArray.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193AF155849BC0004DAFE /* IOSLongArray.m */; };
 		066193D7155849BC0004DAFE /* IOSObjectArray.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193B0155849BC0004DAFE /* IOSObjectArray.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		066193D8155849BC0004DAFE /* IOSObjectArray.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193B1155849BC0004DAFE /* IOSObjectArray.m */; };
 		066193D9155849BC0004DAFE /* IOSPrimitiveClass.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193B2155849BC0004DAFE /* IOSPrimitiveClass.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		066193DA155849BC0004DAFE /* IOSPrimitiveClass.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193B3155849BC0004DAFE /* IOSPrimitiveClass.m */; };
-		066193DB155849BC0004DAFE /* IOSSet.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193B4155849BC0004DAFE /* IOSSet.h */; settings = {ATTRIBUTES = (Public, ); }; };
-		066193DC155849BC0004DAFE /* IOSSet.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193B5155849BC0004DAFE /* IOSSet.m */; };
 		066193DD155849BC0004DAFE /* IOSShortArray.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193B6155849BC0004DAFE /* IOSShortArray.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		066193DE155849BC0004DAFE /* IOSShortArray.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193B7155849BC0004DAFE /* IOSShortArray.m */; };
 		066193DF155849BC0004DAFE /* JavaObject.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193B8155849BC0004DAFE /* JavaObject.h */; settings = {ATTRIBUTES = (Public, ); }; };
 		066193E0155849BC0004DAFE /* JreEmulation.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193B9155849BC0004DAFE /* JreEmulation.m */; };
-		066193E1155849BC0004DAFE /* NSException+StackTrace.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193BA155849BC0004DAFE /* NSException+StackTrace.h */; };
-		066193E2155849BC0004DAFE /* NSException+StackTrace.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193BB155849BC0004DAFE /* NSException+StackTrace.m */; };
 		066193E8155849F80004DAFE /* NSObject+JavaObject.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193E4155849F80004DAFE /* NSObject+JavaObject.h */; };
 		066193E9155849F80004DAFE /* NSObject+JavaObject.m in Sources */ = {isa = PBXBuildFile; fileRef = 066193E5155849F80004DAFE /* NSObject+JavaObject.m */; };
 		066193EA155849F80004DAFE /* NSString+JavaString.h in Headers */ = {isa = PBXBuildFile; fileRef = 066193E6155849F80004DAFE /* NSString+JavaString.h */; };
@@ -287,32 +277,22 @@
 		0661939F155849BC0004DAFE /* IOSCharArray.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSCharArray.m; sourceTree = "<group>"; };
 		066193A0155849BC0004DAFE /* IOSClass.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSClass.h; sourceTree = "<group>"; };
 		066193A1155849BC0004DAFE /* IOSClass.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSClass.m; sourceTree = "<group>"; };
-		066193A2155849BC0004DAFE /* IOSCollection.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSCollection.h; sourceTree = "<group>"; };
-		066193A3155849BC0004DAFE /* IOSCollection.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSCollection.m; sourceTree = "<group>"; };
 		066193A4155849BC0004DAFE /* IOSDoubleArray.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSDoubleArray.h; sourceTree = "<group>"; };
 		066193A5155849BC0004DAFE /* IOSDoubleArray.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSDoubleArray.m; sourceTree = "<group>"; };
 		066193A6155849BC0004DAFE /* IOSFloatArray.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSFloatArray.h; sourceTree = "<group>"; };
 		066193A7155849BC0004DAFE /* IOSFloatArray.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSFloatArray.m; sourceTree = "<group>"; };
 		066193A8155849BC0004DAFE /* IOSIntArray.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSIntArray.h; sourceTree = "<group>"; };
 		066193A9155849BC0004DAFE /* IOSIntArray.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSIntArray.m; sourceTree = "<group>"; };
-		066193AA155849BC0004DAFE /* IOSIterator.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSIterator.h; sourceTree = "<group>"; };
-		066193AB155849BC0004DAFE /* IOSIterator.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSIterator.m; sourceTree = "<group>"; };
-		066193AC155849BC0004DAFE /* IOSList.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSList.h; sourceTree = "<group>"; };
-		066193AD155849BC0004DAFE /* IOSList.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSList.m; sourceTree = "<group>"; };
 		066193AE155849BC0004DAFE /* IOSLongArray.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSLongArray.h; sourceTree = "<group>"; };
 		066193AF155849BC0004DAFE /* IOSLongArray.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSLongArray.m; sourceTree = "<group>"; };
 		066193B0155849BC0004DAFE /* IOSObjectArray.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSObjectArray.h; sourceTree = "<group>"; };
 		066193B1155849BC0004DAFE /* IOSObjectArray.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSObjectArray.m; sourceTree = "<group>"; };
 		066193B2155849BC0004DAFE /* IOSPrimitiveClass.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSPrimitiveClass.h; sourceTree = "<group>"; };
 		066193B3155849BC0004DAFE /* IOSPrimitiveClass.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSPrimitiveClass.m; sourceTree = "<group>"; };
-		066193B4155849BC0004DAFE /* IOSSet.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSSet.h; sourceTree = "<group>"; };
-		066193B5155849BC0004DAFE /* IOSSet.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSSet.m; sourceTree = "<group>"; };
 		066193B6155849BC0004DAFE /* IOSShortArray.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = IOSShortArray.h; sourceTree = "<group>"; };
 		066193B7155849BC0004DAFE /* IOSShortArray.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = IOSShortArray.m; sourceTree = "<group>"; };
 		066193B8155849BC0004DAFE /* JavaObject.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = JavaObject.h; sourceTree = "<group>"; };
 		066193B9155849BC0004DAFE /* JreEmulation.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = JreEmulation.m; sourceTree = "<group>"; };
-		066193BA155849BC0004DAFE /* NSException+StackTrace.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSException+StackTrace.h"; sourceTree = "<group>"; };
-		066193BB155849BC0004DAFE /* NSException+StackTrace.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSException+StackTrace.m"; sourceTree = "<group>"; };
 		066193E4155849F80004DAFE /* NSObject+JavaObject.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSObject+JavaObject.h"; sourceTree = "<group>"; };
 		066193E5155849F80004DAFE /* NSObject+JavaObject.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = "NSObject+JavaObject.m"; sourceTree = "<group>"; };
 		066193E6155849F80004DAFE /* NSString+JavaString.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "NSString+JavaString.h"; sourceTree = "<group>"; };
@@ -716,26 +696,18 @@
 				0661939F155849BC0004DAFE /* IOSCharArray.m */,
 				066193A0155849BC0004DAFE /* IOSClass.h */,
 				066193A1155849BC0004DAFE /* IOSClass.m */,
-				066193A2155849BC0004DAFE /* IOSCollection.h */,
-				066193A3155849BC0004DAFE /* IOSCollection.m */,
 				066193A4155849BC0004DAFE /* IOSDoubleArray.h */,
 				066193A5155849BC0004DAFE /* IOSDoubleArray.m */,
 				066193A6155849BC0004DAFE /* IOSFloatArray.h */,
 				066193A7155849BC0004DAFE /* IOSFloatArray.m */,
 				066193A8155849BC0004DAFE /* IOSIntArray.h */,
 				066193A9155849BC0004DAFE /* IOSIntArray.m */,
-				066193AA155849BC0004DAFE /* IOSIterator.h */,
-				066193AB155849BC0004DAFE /* IOSIterator.m */,
-				066193AC155849BC0004DAFE /* IOSList.h */,
-				066193AD155849BC0004DAFE /* IOSList.m */,
 				066193AE155849BC0004DAFE /* IOSLongArray.h */,
 				066193AF155849BC0004DAFE /* IOSLongArray.m */,
 				066193B0155849BC0004DAFE /* IOSObjectArray.h */,
 				066193B1155849BC0004DAFE /* IOSObjectArray.m */,
 				066193B2155849BC0004DAFE /* IOSPrimitiveClass.h */,
 				066193B3155849BC0004DAFE /* IOSPrimitiveClass.m */,
-				066193B4155849BC0004DAFE /* IOSSet.h */,
-				066193B5155849BC0004DAFE /* IOSSet.m */,
 				066193B6155849BC0004DAFE /* IOSShortArray.h */,
 				066193B7155849BC0004DAFE /* IOSShortArray.m */,
 				066193B8155849BC0004DAFE /* JavaObject.h */,
@@ -743,8 +715,6 @@
 				066193B9155849BC0004DAFE /* JreEmulation.m */,
 				067228F1158FB002005318BD /* Method.h */,
 				06721BA21559DE3800645E1B /* Method.m */,
-				066193BA155849BC0004DAFE /* NSException+StackTrace.h */,
-				066193BB155849BC0004DAFE /* NSException+StackTrace.m */,
 				066193E4155849F80004DAFE /* NSObject+JavaObject.h */,
 				066193E5155849F80004DAFE /* NSObject+JavaObject.m */,
 				066193E6155849F80004DAFE /* NSString+JavaString.h */,
@@ -1096,19 +1066,14 @@
 				066193C3155849BC0004DAFE /* IOSByteArray.h in Headers */,
 				066193C5155849BC0004DAFE /* IOSCharArray.h in Headers */,
 				066193C7155849BC0004DAFE /* IOSClass.h in Headers */,
-				066193C9155849BC0004DAFE /* IOSCollection.h in Headers */,
 				066193CB155849BC0004DAFE /* IOSDoubleArray.h in Headers */,
 				066193CD155849BC0004DAFE /* IOSFloatArray.h in Headers */,
 				066193CF155849BC0004DAFE /* IOSIntArray.h in Headers */,
-				066193D1155849BC0004DAFE /* IOSIterator.h in Headers */,
-				066193D3155849BC0004DAFE /* IOSList.h in Headers */,
 				066193D5155849BC0004DAFE /* IOSLongArray.h in Headers */,
 				066193D7155849BC0004DAFE /* IOSObjectArray.h in Headers */,
 				066193D9155849BC0004DAFE /* IOSPrimitiveClass.h in Headers */,
-				066193DB155849BC0004DAFE /* IOSSet.h in Headers */,
 				066193DD155849BC0004DAFE /* IOSShortArray.h in Headers */,
 				066193DF155849BC0004DAFE /* JavaObject.h in Headers */,
-				066193E1155849BC0004DAFE /* NSException+StackTrace.h in Headers */,
 				066193E8155849F80004DAFE /* NSObject+JavaObject.h in Headers */,
 				066193EA155849F80004DAFE /* NSString+JavaString.h in Headers */,
 				067228E6158FAEBC005318BD /* Field.h in Headers */,
@@ -1275,19 +1240,14 @@
 				066193C4155849BC0004DAFE /* IOSByteArray.m in Sources */,
 				066193C6155849BC0004DAFE /* IOSCharArray.m in Sources */,
 				066193C8155849BC0004DAFE /* IOSClass.m in Sources */,
-				066193CA155849BC0004DAFE /* IOSCollection.m in Sources */,
 				066193CC155849BC0004DAFE /* IOSDoubleArray.m in Sources */,
 				066193CE155849BC0004DAFE /* IOSFloatArray.m in Sources */,
 				066193D0155849BC0004DAFE /* IOSIntArray.m in Sources */,
-				066193D2155849BC0004DAFE /* IOSIterator.m in Sources */,
-				066193D4155849BC0004DAFE /* IOSList.m in Sources */,
 				066193D6155849BC0004DAFE /* IOSLongArray.m in Sources */,
 				066193D8155849BC0004DAFE /* IOSObjectArray.m in Sources */,
 				066193DA155849BC0004DAFE /* IOSPrimitiveClass.m in Sources */,
-				066193DC155849BC0004DAFE /* IOSSet.m in Sources */,
 				066193DE155849BC0004DAFE /* IOSShortArray.m in Sources */,
 				066193E0155849BC0004DAFE /* JreEmulation.m in Sources */,
-				066193E2155849BC0004DAFE /* NSException+StackTrace.m in Sources */,
 				066193E9155849F80004DAFE /* NSObject+JavaObject.m in Sources */,
 				066193EB155849F80004DAFE /* NSString+JavaString.m in Sources */,
 				067219AD1559C7FC00645E1B /* BufferedInputStream.m in Sources */,
