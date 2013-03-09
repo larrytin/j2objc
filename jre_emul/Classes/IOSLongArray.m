@@ -33,14 +33,14 @@
 }
 
 - (long long)longAtIndex:(NSUInteger)index {
-  [self checkIndex:index];
+  IOSArray_checkIndex(self, index);
   return buffer_[index];
 }
 
 - (id)initWithLongs:(const long long *)longs count:(NSUInteger)count {
   if ((self = [self initWithLength:count])) {
     if (longs != nil) {
-      memcpy(buffer_, longs, count * sizeof(long));
+      memcpy(buffer_, longs, count * sizeof(long long));
     }
   }
   return self;
@@ -55,44 +55,43 @@
 }
 
 - (long long)replaceLongAtIndex:(NSUInteger)index withLong:(long long)value {
-  [self checkIndex:index];
+  IOSArray_checkIndex(self, index);
   buffer_[index] = value;
   return value;
 }
 
 - (void)getLongs:(long long *)buffer length:(NSUInteger)length {
-  [self checkIndex:(length - 1)];
+  IOSArray_checkIndex(self, length - 1);
   memcpy(buffer, buffer_, length * sizeof(long long));
 }
 
 - (void) arraycopy:(NSRange)sourceRange
        destination:(IOSArray *)destination
             offset:(NSInteger)offset {
-  [self checkRange:sourceRange];
-  NSRange destRange = NSMakeRange(offset, sourceRange.length);
-  [destination checkRange:destRange];
+  IOSArray_checkRange(self, sourceRange);
+  IOSArray_checkRange(destination, NSMakeRange(offset, sourceRange.length));
   memmove(((IOSLongArray *) destination)->buffer_ + offset,
           self->buffer_ + sourceRange.location,
           sourceRange.length * sizeof(long long));
 }
 
 - (long long)incr:(NSUInteger)index {
-  [self checkIndex:index];
+  IOSArray_checkIndex(self, index);
   return ++buffer_[index];
 }
 
 - (long long)decr:(NSUInteger)index {
-  [self checkIndex:index];
+  IOSArray_checkIndex(self, index);
   return --buffer_[index];
 }
 
 - (long long)postIncr:(NSUInteger)index {
-  [self checkIndex:index];
+  IOSArray_checkIndex(self, index);
   return buffer_[index]++;
 }
 
 - (long long)postDecr:(NSUInteger)index {
-  [self checkIndex:index];
+  IOSArray_checkIndex(self, index);
   return buffer_[index]--;
 }
 

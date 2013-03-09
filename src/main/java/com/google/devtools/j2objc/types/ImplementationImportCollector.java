@@ -23,7 +23,7 @@ import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.ArrayAccess;
-import org.eclipse.jdt.core.dom.ArrayType;
+import org.eclipse.jdt.core.dom.ArrayCreation;
 import org.eclipse.jdt.core.dom.Assignment;
 import org.eclipse.jdt.core.dom.Assignment.Operator;
 import org.eclipse.jdt.core.dom.CastExpression;
@@ -128,8 +128,14 @@ public class ImplementationImportCollector extends HeaderImportCollector {
   }
 
   @Override
-  public boolean visit(ArrayType node) {
-    addReference(Types.getTypeBinding(node).getComponentType());
+  public boolean visit(ArrayCreation node) {
+    ITypeBinding type = Types.getTypeBinding(node);
+    addReference(type);
+    int dim = node.dimensions().size();
+    for (int i = 0; i < dim; i++) {
+      type = type.getComponentType();
+      addReference(type);
+    }
     return super.visit(node);
   }
 
@@ -251,6 +257,8 @@ public class ImplementationImportCollector extends HeaderImportCollector {
 
   @Override
   public boolean visit(MethodInvocation node) {
+    IMethodBinding methodBinding = Types.getMethodBinding(node);
+    addReference(methodBinding.getReturnType());
     // Check for vararg method
     IMethodBinding binding = Types.getMethodBinding(node);
     if (binding != null && binding.isVarargs()) {
@@ -292,7 +300,6 @@ public class ImplementationImportCollector extends HeaderImportCollector {
       }
     }
     while (expr != null && expr instanceof Name) {
-      IMethodBinding methodBinding = Types.getMethodBinding(node);
       if (methodBinding instanceof IOSMethodBinding) {
         // true for mapped methods
         IMethodBinding resolvedBinding = Types.resolveInvocationBinding(node);
@@ -301,7 +308,6 @@ public class ImplementationImportCollector extends HeaderImportCollector {
           break;
         }
       }
-      addReference(methodBinding.getReturnType());
       ITypeBinding typeBinding = Types.getTypeBinding(expr);
       if (typeBinding != null && typeBinding.isClass()) { // if class literal
         addReference(typeBinding);
