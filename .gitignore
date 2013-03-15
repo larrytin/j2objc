@@ -1,1 +1,17 @@
+.DS_Store
 *.o
+*.a
+*.jar
+
+build_result/
+dist/j2objc
+dist/j2objcc
+dist/lib/
+dist/man/
+
+jre_emul/build_result/.*
+jre_emul/build_result/*.list
+jre_emul/build_result/**/*.h
+
+junit/build_result/java/
+junit/build_result/**/*.h
