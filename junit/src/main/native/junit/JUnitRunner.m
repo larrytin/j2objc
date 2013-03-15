@@ -3,7 +3,7 @@
 //  JreEmulation
 //
 //  Created by Tom Ball on 11/10/11.
-//  Copyright 2011 Google Inc. All rights reserved.
+//  Copyright 2013 Google Inc. All rights reserved.
 //
 
 #import "JUnitRunner.h"
