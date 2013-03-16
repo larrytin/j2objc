@@ -4,10 +4,10 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/goodow/j2objc.git", :tag => "v#{s.version}" }
 
   s.source_files = 'dist/include/**/*.h', 'jre_emul/Classes/**/*.m', 'jre_emul/build_result/Classes/**/*.m', 'junit/src/main/native/**/*.m', 'junit/build_result/junit/**/*.m'
-# s.public_header_files = 'dist/include', 'dist/include/**/*.h'
-  s.header_mappings_dir = 'dist/include'
+  s.public_header_files = 'jre_emul/Classes/java/lang/reflect'
+# s.header_mappings_dir = 'dist/include'
   
   s.frameworks = 'SenTestingKit'
-  s.xcconfig = { 'USE_HEADERMAP' => 'NO', 'FRAMEWORK_SEARCH_PATHS' => '$(SYSTEM_APPS_DIR)/Xcode.app/Contents/Developer/Library/Frameworks', 'GCC_WARN_MISSING_PARENTHESES' => 'NO' }
+  s.xcconfig = { 'HEADER_SEARCH_PATHS' => '"${PODS_ROOT}/jre_emul/dist/include"', 'USE_HEADERMAP' => 'NO', 'FRAMEWORK_SEARCH_PATHS' => '$(SYSTEM_APPS_DIR)/Xcode.app/Contents/Developer/Library/Frameworks', 'GCC_WARN_MISSING_PARENTHESES' => 'NO' }
 
 end
