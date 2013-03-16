@@ -8,6 +8,6 @@ Pod::Spec.new do |s|
   s.header_mappings_dir = 'dist/include'
   
   s.frameworks = 'SenTestingKit'
-  s.xcconfig = { 'USE_HEADERMAP' => 'NO', 'FRAMEWORK_SEARCH_PATHS' => '$(SYSTEM_APPS_DIR)/Xcode.app/Contents/Developer/Library/Frameworks' }
+  s.xcconfig = { 'USE_HEADERMAP' => 'NO', 'FRAMEWORK_SEARCH_PATHS' => '$(SYSTEM_APPS_DIR)/Xcode.app/Contents/Developer/Library/Frameworks', 'GCC_WARN_MISSING_PARENTHESES' => 'NO' }
 
 end
