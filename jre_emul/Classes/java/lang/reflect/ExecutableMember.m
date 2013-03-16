@@ -19,7 +19,7 @@
 //  Created by Tom Ball on 11/11/11.
 //
 
-#import "ExecutableMember.h"
+#import "java/lang/reflect/ExecutableMember.h"
 #import "IOSClass.h"
 #import "IOSObjectArray.h"
 #import "java/lang/NoSuchMethodException.h"

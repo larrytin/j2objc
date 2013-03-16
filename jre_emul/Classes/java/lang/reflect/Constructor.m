@@ -19,7 +19,7 @@
 //  Created by Tom Ball on 11/11/11.
 //
 
-#import "Constructor.h"
+#import "java/lang/reflect/Constructor.h"
 #import "java/lang/AssertionError.h"
 #import "java/lang/Boolean.h"
 #import "java/lang/Byte.h"

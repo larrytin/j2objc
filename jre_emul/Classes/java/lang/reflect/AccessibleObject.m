@@ -19,7 +19,7 @@
 //  Created by Tom Ball on 6/18/12.
 //
 
-#import "AccessibleObject.h"
+#import "java/lang/reflect/AccessibleObject.h"
 #import "java/lang/AssertionError.h"
 #import "java/lang/Boolean.h"
 #import "java/lang/Byte.h"
