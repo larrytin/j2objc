@@ -6,5 +6,8 @@ Pod::Spec.new do |s|
   s.source_files = 'dist/include/**/*.h', 'jre_emul/Classes/**/*.m', 'jre_emul/build_result/Classes/**/*.m', 'junit/src/main/native/**/*.m', 'junit/build_result/junit/**/*.m'
 # s.public_header_files = 'dist/include', 'dist/include/**/*.h'
   s.header_mappings_dir = 'dist/include'
+  
+  s.frameworks = 'SenTestingKit'
+  s.xcconfig = { 'USE_HEADERMAP' => 'NO', 'OTHER_LDFLAGS' => '-lObjC' }
 
 end
