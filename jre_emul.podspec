@@ -3,7 +3,7 @@ Pod::Spec.new do |s|
   s.version      = "0.6.1"
   s.summary      = "J2ObjC's JRE emulation library, emulates a subset of the Java runtime library."
   s.homepage     = "https://code.google.com/p/j2objc/"
-  s.author       = { "Larry Tin" => "dev@goodow.com" }
+  s.author       = "Google Inc."
   s.source       = { :git => "https://github.com/goodow/j2objc.git", :tag => "v#{s.version}" }
 
   s.source_files = 'jre_emul/Classes/**/*.m', 'jre_emul/build_result/Classes/**/*.m'
