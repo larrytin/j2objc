@@ -45,6 +45,7 @@ TEST_OBJS = \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/io/FileInputStreamTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/io/FileNotFoundExceptionTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/io/FileReaderTest.o \
+	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/io/FileTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/io/FileWriterTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/io/FilterOutputStreamTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/io/FileOutputStreamTest.o \
@@ -130,6 +131,7 @@ TEST_OBJS = \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/util/ArraysTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/util/BitSetTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/util/CalendarTest.o \
+	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/util/CollectionsTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/util/DateTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/util/EmptyStackExceptionTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/util/EnumSetTest.o \
@@ -169,7 +171,6 @@ FAILING_TESTS = \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/lang/FloatTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/lang/StrictMathTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/lang/StringBuilderTest.o \
-	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/util/CollectionsTest.o \
 	$(TESTS_DIR)/org/apache/harmony/luni/tests/java/util/TreeSetTest.o \
 	$(TESTS_DIR)/org/apache/harmony/tests/java/util/regex/ModeTest.o \
 
@@ -234,7 +235,7 @@ TEST_SOURCE_PATH = \
 TEST_JOC = ../dist/j2objc -classpath $(JUNIT_JAR) -Werror \
 	-sourcepath $(TEST_SOURCE_PATH) -d $(TESTS_DIR)
 TEST_JOCC = ../dist/j2objcc -g -I$(TESTS_DIR) -l junit -Werror \
-	-L$(TESTS_DIR) -l test-support
+	-L$(TESTS_DIR) -l test-support -l icucore -l stdc++
 SUPPORT_LIB = $(TESTS_DIR)/libtest-support.a
 TEST_BINS = $(TEST_OBJS:.o=)
 
@@ -256,7 +257,7 @@ build: support-lib $(TEST_OBJS)
 link: build $(TEST_BINS)
 
 run-tests: link $(TEST_BINS)
-	@/bin/sh runtests.sh $(TEST_BINS)
+	@/bin/sh ../scripts/runtests.sh $(TEST_BINS)
 
 $(SUPPORT_LIB): $(SUPPORT_OBJS)
 	libtool -static -o $(SUPPORT_LIB) $(SUPPORT_OBJS)

@@ -65,7 +65,7 @@ import java.util.regex.Pattern;
  */
 public abstract class TimeZone implements Serializable, Cloneable {
     private static final Pattern CUSTOM_ZONE_ID_PATTERN = 
-	Pattern.compile("^GMT[-+](\\d{1,2})(:?(\\d\\d))?$");
+	Pattern.compile("^GMT[-+](\\d{1,2})([:.]?(\\d\\d))?$");
 
     /**
      * The short display name style, such as {@code PDT}. Requests for this
@@ -208,7 +208,7 @@ public abstract class TimeZone implements Serializable, Cloneable {
         // TODO: do we ever get here?
 
         int offset = getRawOffset();
-        if (useDaylight && this instanceof SimpleTimeZone) {
+        if (useDaylight) {
             offset += getDSTSavings();
         }
         offset /= 60000;
@@ -225,14 +225,14 @@ public abstract class TimeZone implements Serializable, Cloneable {
         appendNumber(builder, 2, offset % 60);
         return builder.toString();
     }
-    
+
     private native String displayName(boolean daylightTime, boolean shortName, Locale locale) /*-[
       NSTimeZoneNameStyle zoneStyle;
       if (daylightTime) {
-        zoneStyle = shortName ? 
+        zoneStyle = shortName ?
             NSTimeZoneNameStyleShortDaylightSaving : NSTimeZoneNameStyleDaylightSaving;
       } else {
-        zoneStyle = shortName ? 
+        zoneStyle = shortName ?
             NSTimeZoneNameStyleShortGeneric : NSTimeZoneNameStyleGeneric;
       }
 
@@ -402,10 +402,14 @@ public abstract class TimeZone implements Serializable, Cloneable {
       if (toStandard && toDaylightSaving) {
         NSUInteger savingsOffset =
             [tz daylightSavingTimeOffsetForDate:toDaylightSaving] * 1000;
+        if ([tz isDaylightSavingTime]) {
+          // iOS returns current seconds, not the zone difference.
+          offset -= savingsOffset;
+        }
 
         // Fetch each date's components.
         NSCalendar *calendar = [NSCalendar currentCalendar];
-        NSUInteger units =NSMonthCalendarUnit | NSDayCalendarUnit |
+        NSUInteger units = NSMonthCalendarUnit | NSDayCalendarUnit |
             NSHourCalendarUnit | NSMinuteCalendarUnit | NSSecondCalendarUnit;
         NSDateComponents *daylight = [calendar components:units
                                                  fromDate:toDaylightSaving];
@@ -420,21 +424,21 @@ public abstract class TimeZone implements Serializable, Cloneable {
                             ([standard minute] * 60) +
                              [standard second]) * 1000;
 
-        return [[JavaUtilSimpleTimeZone alloc]
-                initWithInt:offset
-               withNSString:[tz name]
-                    withInt:[daylight month] - 1
-                    withInt:[daylight day] - 1
-                    withInt:0
-                    withInt:daylightTime
-                    withInt:[standard month] - 1
-                    withInt:[standard day] - 1
-                    withInt:0
-                    withInt:standardTime
-                    withInt:savingsOffset];
+        return AUTORELEASE([[JavaUtilSimpleTimeZone alloc]
+                            initWithInt:offset
+                           withNSString:[tz name]
+                                withInt:[daylight month] - 1
+                                withInt:[daylight day] - 1
+                                withInt:0
+                                withInt:daylightTime
+                                withInt:[standard month] - 1
+                                withInt:[standard day] - 1
+                                withInt:0
+                                withInt:standardTime
+                                withInt:savingsOffset]);
       } else {
-        return [[JavaUtilSimpleTimeZone alloc]
-                initWithInt:offset withNSString:[tz name]];
+        return AUTORELEASE([[JavaUtilSimpleTimeZone alloc]
+                           initWithInt:offset withNSString:[tz name]]);
       }
     ]-*/;
 
@@ -444,7 +448,10 @@ public abstract class TimeZone implements Serializable, Cloneable {
     private static TimeZone getCustomTimeZone(String id) {
         Matcher m = CUSTOM_ZONE_ID_PATTERN.matcher(id);
         if (!m.matches()) {
-            return null;
+            return GMT;  // Expected result for invalid format.
+        }
+        if (id.equals("GMT-00")) {
+            return GMT;
         }
 
         int hour;
@@ -468,7 +475,10 @@ public abstract class TimeZone implements Serializable, Cloneable {
             raw = -raw;
         }
 
-        String cleanId = String.format("GMT%c%02d:%02d", sign, hour, minute);
+        // Determine whether to include a separator between hours and minutes.
+        String fmt = m.group(2) != null && !Character.isDigit(m.group(2).charAt(0)) ?
+            "GMT%c%02d%02d" : "GMT%c%02d:%02d";
+        String cleanId = String.format(fmt, sign, hour, minute);
         return new SimpleTimeZone(raw, cleanId);
     }
 

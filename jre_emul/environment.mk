@@ -29,9 +29,7 @@
 #
 # Author: Tom Ball
 
-CWD := $(shell pwd)
-
-APACHE_HARMONY_BASE = $(CWD)/apache_harmony/classlib/modules
+APACHE_HARMONY_BASE = apache_harmony/classlib/modules
 JRE_ROOT = $(APACHE_HARMONY_BASE)/luni/src/main/java
 JRE_ANNOTATION_ROOT = $(APACHE_HARMONY_BASE)/annotation/src/main/java
 JRE_CONCURRENT_ROOT = $(APACHE_HARMONY_BASE)/concurrent/src/main/java
@@ -44,29 +42,37 @@ JRE_NIO_TEST_ROOT = $(APACHE_HARMONY_BASE)/nio/src/test/java/common
 TEST_SUPPORT_ROOT = $(APACHE_HARMONY_BASE)/../support/src/test/java
 MATH_TEST_SUPPORT_ROOT = $(APACHE_HARMONY_BASE)/math/src/test/java/tests/api
 REGEX_TEST_ROOT = $(APACHE_HARMONY_BASE)/regex/src/test/java
-J2OBJC_SRC_ROOT = $(CWD)/../src/main/java
 
-ANDROID_BASE = $(CWD)/android/libcore
+ANDROID_BASE = android/libcore
 ANDROID_JRE_ROOT = $(ANDROID_BASE)/luni/src/main/java
 ANDROID_JRE_TEST_ROOT = $(ANDROID_BASE)/luni/src/test/java/tests/api
 
-MISC_TEST_ROOT = $(CWD)/Tests
-PROJECT_ROOT = $(CWD)/..
+MISC_TEST_ROOT = Tests
+J2OBJC_ROOT = ..
 
-include ../src/main/make/detect_xcode.mk
+ANDROID_INCLUDE = $(ANDROID_BASE)/include
+ICU4C_I18N_INCLUDE = icu4c/i18n/include
+ICU4C_COMMON_INCLUDE = icu4c/common
+
+include ../make/common.mk
 
 CLASS_DIR = $(BUILD_DIR)/Classes
 EMULATION_STAGE = /tmp/jre_emul
 EMULATION_JAR = $(BUILD_DIR)/jre_emul.jar
+EMULATION_JAR_DIST = $(DIST_JAR_DIR)/jre_emul.jar
 EMULATION_LIB = $(BUILD_DIR)/libjre_emul.a
-EMULATION_CLASS_DIR = $(CWD)/Classes
-INCLUDE_DIR = $(BUILD_DIR)/include
+EMULATION_LIB_DIST = $(DIST_LIB_DIR)/libjre_emul.a
+XCODE_LIB = $(CONFIGURATION_BUILD_DIR)/libjre_emul.a
+EMULATION_CLASS_DIR = Classes
 TESTS_DIR = $(BUILD_DIR)/tests
-STUBS_DIR = $(CWD)/stub_classes
+STUBS_DIR = stub_classes
+
+ifndef TRANSLATED_SOURCE_DIR
+TRANSLATED_SOURCE_DIR = $(CLASS_DIR)
+endif
 
 JRE_SRC_ROOTS = $(JRE_ROOT) $(JRE_ANNOTATION_ROOT) $(JRE_CONCURRENT_ROOT) $(JRE_KERNEL_ROOT) \
-    $(JRE_MATH_ROOT) $(JRE_NIO_ROOT) $(ANDROID_JRE_ROOT) $(EMULATION_CLASS_DIR) $(J2OBJC_SRC_ROOT) \
-    $(STUBS_DIR)
+    $(JRE_MATH_ROOT) $(JRE_NIO_ROOT) $(ANDROID_JRE_ROOT) $(EMULATION_CLASS_DIR) $(STUBS_DIR)
 JRE_SRC = $(subst $(eval) ,:,$(JRE_SRC_ROOTS))
 TEST_SRC = $(JRE_TEST_ROOT):$(JRE_MATH_TEST_ROOT):$(JRE_NIO_TEST_ROOT):$(TEST_SUPPORT_ROOT):$(MATH_TEST_SUPPORT_ROOT):$(REGEX_TEST_ROOT):$(MISC_TEST_ROOT)
 vpath %.java $(JRE_SRC) $(TEST_SRC)
@@ -75,7 +81,7 @@ CLANG=$(XCRUN) clang
 
 # J2ObjC settings
 J2OBJC := USE_SYSTEM_BOOT_PATH=TRUE $(DIST_DIR)/j2objc --mem-debug \
-   -classpath $(EMULATION_JAR) -d $(CLASS_DIR) $(J2OBJC_DEBUGFLAGS)
+   -classpath $(EMULATION_JAR) -d $(TRANSLATED_SOURCE_DIR) $(J2OBJC_DEBUGFLAGS)
 
 # GCC settings, based on Xcode log output
 WARNINGS := $(WARNINGS) -Wno-trigraphs -Wunused-variable -Werror \
@@ -98,10 +104,10 @@ WARNINGS := $(WARNINGS) -Wobjc-missing-property-synthesis \
 
 # The -fobjc flags match XCode (a link fails without them because of
 # missing symbols of the form OBJC_CLASS_$_[classname]).
-OBJCFLAGS := -ObjC $(WARNINGS) $(SDK_FLAGS) $(ALT_SDK_FLAGS) \
-  $(ARCH_FLAGS) $(ALT_ARCH_FLAGS) \
+OBJCFLAGS := $(WARNINGS) -DU_DISABLE_RENAMING=1 \
   -fobjc-abi-version=2 -fobjc-legacy-dispatch $(DEBUGFLAGS) \
-  -I/System/Library/Frameworks/ExceptionHandling.framework/Headers
+  -I/System/Library/Frameworks/ExceptionHandling.framework/Headers \
+  -I$(ANDROID_INCLUDE) -I$(ICU4C_I18N_INCLUDE) -I$(ICU4C_COMMON_INCLUDE)
 
 ifdef CLANG_ENABLE_OBJC_ARC
 J2OBJC := $(J2OBJC) -use-arc

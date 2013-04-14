@@ -13,11 +13,34 @@
 #import "java/lang/Throwable.h"
 #import "java/util/Enumeration.h"
 
+#import <execinfo.h>
+
+void signalHandler(int sig) {
+  // Get void*'s for all entries on the stack.
+  void *array[64];
+  size_t frame_count = backtrace(array, 64);
+
+  // Print all the frames to stderr.
+  fprintf(stderr, "Error: signal %d:\n", sig);
+  backtrace_symbols_fd(array, frame_count, 2);
+  exit(1);
+}
+
+void installSignalHandler() {
+  signal(SIGABRT, signalHandler);
+  signal(SIGILL, signalHandler);
+  signal(SIGSEGV, signalHandler);
+  signal(SIGFPE, signalHandler);
+  signal(SIGBUS, signalHandler);
+  signal(SIGPIPE, signalHandler);
+}
+
 @implementation JUnitRunner
 
 void listFailedTests(id<JavaUtilEnumeration> problems);
 
 + (int)runTests:(Class)testClass, ... {
+  installSignalHandler();
   va_list args;
   va_start(args, testClass);
   JunitFrameworkTestSuite *suite =
@@ -30,10 +53,10 @@ void listFailedTests(id<JavaUtilEnumeration> problems);
   va_start(args, testClass);
   return [JUnitRunner testSuite:testClass withArguments:args];
 }
-                                      
+
 + (JunitFrameworkTestSuite *)testSuite:(Class)testClass
                          withArguments:(va_list)args {
-  JunitFrameworkTestSuite *suite = 
+  JunitFrameworkTestSuite *suite =
       [[JunitFrameworkTestSuite alloc]
        initWithNSString:NSStringFromClass(testClass)];
   NSString *name;
@@ -59,7 +82,7 @@ void listFailedTests(id<JavaUtilEnumeration> problems);
 #endif
   [test runWithJunitFrameworkTestResult:result];
   if ([result wasSuccessful]) {
-    NSLog(@"OK (%d test%@)", [result runCount], 
+    NSLog(@"OK (%d test%@)", [result runCount],
           [result runCount] == 1 ? @"" : @"s");
   }
   else {
