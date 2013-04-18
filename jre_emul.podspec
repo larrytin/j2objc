@@ -7,7 +7,7 @@ Pod::Spec.new do |s|
   s.source       = { :git => "https://github.com/goodow/j2objc.git", :tag => "v#{s.version}" }
 
   s.source_files = FileList['jre_emul/Classes/**/*.m','jre_emul/Classes/**/*.mm', 'jre_emul/build_result/Classes/**/*.m'].exclude(/.*Test\.[hm]$/)
-  s.preserve_paths = FileList['dist/include/**/*.h', 'jre_emul/icu4c/i18n/include/**', 'jre_emul/icu4c/common/**'].exclude(/^dist\/include\/junit\/.*/)
+  s.preserve_paths = FileList['dist/include/**/*.h', 'jre_emul/icu4c/i18n/include/**', 'jre_emul/icu4c/common/**'].exclude(/dist\/include\/junit\/.*/)
 
 # s.public_header_files = FileList['jre_emul/Classes/java/lang/reflect/*.h'].exclude(/build_result/)
 # s.header_mappings_dir = 'dist/include' 
