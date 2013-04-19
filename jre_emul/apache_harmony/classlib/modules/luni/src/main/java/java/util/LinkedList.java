@@ -725,4 +725,10 @@ public class LinkedList<E> extends AbstractSequentialList<E> implements
     public E element() {
         return getFirst();
     }
+
+    // This avoids the circular link element references, leaking memory on iOS.
+    protected void finalize() {
+        clear();
+        voidLink.previous = voidLink.next = null;
+    }
 }

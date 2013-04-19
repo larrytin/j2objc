@@ -154,7 +154,7 @@ static NSString *getTranslatedMethodName(NSString *name,
 }
 
 - (NSString *)getSimpleName {
-  return NSStringFromClass(class_);
+  return class_ ? NSStringFromClass(class_) : NSStringFromProtocol(protocol_);
 }
 
 - (NSString *)getCanonicalName {
@@ -404,34 +404,40 @@ NSString *getTranslatedMethodName(NSString *name,
 }
 
 JavaLangReflectConstructor *getConstructorImpl(IOSClass *cls,
-                                               IOSObjectArray *classes,
-                                               BOOL searchSuperclasses) {
+                                               IOSObjectArray *classes) {
   NSMutableString *name = [@"init" mutableCopy];
 #if ! __has_feature(objc_arc)
   [name autorelease];
 #endif
   BOOL first = YES;
   for (int i = 0; i < [classes count]; i++) {
-    IOSClass *cls = [classes objectAtIndex:i];
+    IOSClass *type = [classes objectAtIndex:i];
     if (first) {
       [name appendString:@"With"];
       first = NO;
     } else {
       [name appendString:@"with"];
     }
-    [name appendFormat:@"%@:", [cls getSimpleName]];
+    [name appendFormat:@"%@:", [type getSimpleName]];
   }
   
   SEL selector = NSSelectorFromString(name);
-  if (cls != nil && ![cls respondsToSelector:selector] && searchSuperclasses) {
-    while (cls != nil) {
-      cls = [cls getSuperclass];
-      if ([cls respondsToSelector:selector]) {
+  BOOL hasConstructor;
+  if (cls->protocol_) {
+    hasConstructor = NO;
+  } else {
+    hasConstructor = NO;
+    unsigned count;
+    Method *instanceMethods = class_copyMethodList(cls->class_, &count);
+    for (unsigned i = 0; i < count; i++) {
+      SEL signature = method_getName(instanceMethods[i]);
+      if (sel_isEqual(selector, signature)) {
+        hasConstructor = YES;
         break;
       }
     }
   }
-  if (cls != nil && ![cls respondsToSelector:selector]) {
+  if (!hasConstructor) {
     // Either a protocol (Java interface - no constructors) or doesn't have
     // the required constructor.
 #if __has_feature(objc_arc)
@@ -446,12 +452,15 @@ JavaLangReflectConstructor *getConstructorImpl(IOSClass *cls,
 }
 
 - (JavaLangReflectConstructor *)getConstructor:(IOSObjectArray *)classes {
-  return getConstructorImpl(self, classes, YES);
+  // Java's getConstructor() only returns the constructor if it's public.
+  // However, all constructors in Objective-C are public, so this method
+  // is identical to getDeclaredConstructor().
+  return getConstructorImpl(self, classes);
 }
 
 - (JavaLangReflectConstructor *)getDeclaredConstructor:
     (IOSObjectArray *)classes {
-  return getConstructorImpl(self, classes, NO);
+  return getConstructorImpl(self, classes);
 }
 
 - (BOOL) isAssignableFrom:(IOSClass *)cls {
