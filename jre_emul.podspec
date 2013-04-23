@@ -15,8 +15,7 @@ Pod::Spec.new do |s|
 # s.header_mappings_dir = 'dist/include' 
 # s.frameworks = 'SenTestingKit'
 
-  s.xcconfig = { 'HEADER_SEARCH_PATHS' => '"${PODS_ROOT}/jre_emul/dist/include" \
-    "${PODS_ROOT}/jre_emul/jre_emul/icu4c/i18n/include" "${PODS_ROOT}/jre_emul/jre_emul/icu4c/common"', \
+  s.xcconfig = { 'HEADER_SEARCH_PATHS' => '"${PODS_ROOT}/jre_emul/dist/include" "${PODS_ROOT}/jre_emul/jre_emul/icu4c/i18n/include" "${PODS_ROOT}/jre_emul/jre_emul/icu4c/common"', \
     'OTHER_LDFLAGS' => '-licucore -lstdc++', 'GCC_WARN_MISSING_PARENTHESES' => 'NO' }
 # USE_HEADERMAP = NO
 
