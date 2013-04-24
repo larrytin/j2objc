@@ -249,17 +249,17 @@ public class ObjectiveCHeaderGeneratorTest extends GenerationTest {
       "public class Example { class Inner {} }",
       "Example", "Example.h");
     assertTranslation(translation, "@interface Example_Inner : NSObject");
-    assertTranslation(translation, "Example *this$0_;");
-    assertTranslation(translation, "- (id)initWithExample:(Example *)outer$0;");
+    assertNotInTranslation(translation, "Example *this");
+    assertTranslation(translation, "- (id)initWithExample:(Example *)outer$;");
   }
 
   public void testInnerClassDeclarationWithOuterReference() throws IOException {
     String translation = translateSourceFile(
-      "public class Example { int i; class Inner { int j = i; } }",
+      "public class Example { int i; class Inner { void test() { int j = i; } } }",
       "Example", "Example.h");
     assertTranslation(translation, "@interface Example_Inner : NSObject");
     assertTranslation(translation, "Example *this$0;");
-    assertTranslation(translation, "- (id)initWithExample:(Example *)outer$0;");
+    assertTranslation(translation, "- (id)initWithExample:(Example *)outer$;");
   }
 
   public void testAnonymousClassDeclaration() throws IOException {
@@ -268,8 +268,9 @@ public class ObjectiveCHeaderGeneratorTest extends GenerationTest {
       "Example", "Example.h");
     assertTranslation(translation, "@interface Example_$1 : NSObject < JavaLangRunnable >");
     assertTranslation(translation, "- (void)run;");
-    assertTranslation(translation, "Example *this$0_;");
-    assertTranslation(translation, "- (id)initWithExample:(Example *)outer$0;");
+    // Outer reference is not required.
+    assertNotInTranslation(translation, "Example *this");
+    assertNotInTranslation(translation, "- (id)initWithExample:");
   }
 
   public void testEnum() throws IOException {

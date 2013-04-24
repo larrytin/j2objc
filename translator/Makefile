@@ -54,17 +54,9 @@ JAVA_SOURCES = \
 	gen/SourceFileGenerator.java \
 	gen/SourcePosition.java \
 	gen/StatementGenerator.java \
-	sym/MethodSymbol.java \
-	sym/Scope.java \
-	sym/Symbol.java \
-	sym/Symbols.java \
-	sym/SymbolTableBuilder.java \
-	sym/TypeSymbol.java \
-	sym/VariableSymbol.java \
 	translate/ASTFactory.java \
 	translate/AnonymousClassConverter.java \
 	translate/Autoboxer.java \
-	translate/ClassConverter.java \
 	translate/DeadCodeEliminator.java \
 	translate/DestructorGenerator.java \
 	translate/GwtConverter.java \
@@ -72,7 +64,8 @@ JAVA_SOURCES = \
 	translate/InnerClassExtractor.java \
 	translate/JavaToIOSMethodTranslator.java \
 	translate/JavaToIOSTypeConverter.java \
-	translate/ReferenceDescription.java \
+	translate/OuterReferenceFixer.java \
+	translate/OuterReferenceResolver.java \
 	translate/Rewriter.java \
 	types/BindingMapBuilder.java \
 	types/BindingMapVerifier.java \
@@ -100,7 +93,6 @@ JAVA_SOURCES = \
 	util/ErrorReportingASTVisitor.java \
 	util/NameTable.java \
 	util/ProGuardUsageParser.java \
-	util/TypeTrackingVisitor.java \
 	util/UnicodeUtils.java \
 
 RESOURCES = J2ObjC.properties JRE.mappings

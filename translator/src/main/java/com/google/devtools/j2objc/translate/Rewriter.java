@@ -18,7 +18,6 @@ package com.google.devtools.j2objc.translate;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.devtools.j2objc.sym.Symbols;
 import com.google.devtools.j2objc.types.GeneratedMethodBinding;
 import com.google.devtools.j2objc.types.GeneratedTypeBinding;
 import com.google.devtools.j2objc.types.GeneratedVariableBinding;
@@ -373,7 +372,7 @@ public class Rewriter extends ErrorReportingASTVisitor {
       node = NodeCopier.copySubtree(ast, node);
       stmts.add(node);
       stmts.add(toInsert);
-      ClassConverter.setProperty(oldNode, block);
+      ASTUtil.setProperty(oldNode, block);
     }
     return node;
   }
@@ -422,7 +421,7 @@ public class Rewriter extends ErrorReportingASTVisitor {
 
     if (hasContinue[0] || hasBreak[0]) {
       // Replace this node with its statement, thus deleting the label.
-      ClassConverter.setProperty(node, NodeCopier.copySubtree(ast, node.getBody()));
+      ASTUtil.setProperty(node, NodeCopier.copySubtree(ast, node.getBody()));
     }
     return true;
   }
@@ -477,7 +476,7 @@ public class Rewriter extends ErrorReportingASTVisitor {
     Block newBlock = expressionType.isArray() ?
         makeArrayIterationBlock(ast, expression, expressionType, loopVariable, loopBody) :
         makeIterableBlock(ast, expression, expressionType, loopVariable, loopBody);
-    ClassConverter.setProperty(node, newBlock);
+    ASTUtil.setProperty(node, newBlock);
   }
 
   private Block makeArrayIterationBlock(
@@ -602,7 +601,7 @@ public class Rewriter extends ErrorReportingASTVisitor {
       Types.addBinding(nonStringExpr, nonStringExprType);
       stringExpr.setLeftOperand(nonStringExpr);
       Types.addBinding(stringExpr, ast.resolveWellKnownType("java.lang.String"));
-      ClassConverter.setProperty(node, stringExpr);
+      ASTUtil.setProperty(node, stringExpr);
     }
   }
 
@@ -666,7 +665,7 @@ public class Rewriter extends ErrorReportingASTVisitor {
       nodeToReplace = parent;
     }
     ITypeBinding type = Types.getTypeBinding(node);
-    ClassConverter.setProperty(nodeToReplace, createIOSArrayInitializer(type, node));
+    ASTUtil.setProperty(nodeToReplace, createIOSArrayInitializer(type, node));
   }
 
   /**
@@ -1033,7 +1032,6 @@ public class Rewriter extends ErrorReportingASTVisitor {
       param.setType(Types.makeType(paramType));
       ASTUtil.getParameters(method).add(param);
     }
-    Symbols.scanAST(method);
     return method;
   }
 

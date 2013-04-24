@@ -17,7 +17,6 @@
 package com.google.devtools.j2objc.translate;
 
 import com.google.common.collect.Lists;
-import com.google.devtools.j2objc.sym.Symbols;
 import com.google.devtools.j2objc.types.GeneratedMethodBinding;
 import com.google.devtools.j2objc.types.GeneratedVariableBinding;
 import com.google.devtools.j2objc.types.NodeCopier;
@@ -267,7 +266,7 @@ public class InitializationNormalizer extends ErrorReportingASTVisitor {
     IVariableBinding rhsBinding = Types.getVariableBinding(
         ((Assignment) expression).getRightHandSide());
     return rhsBinding != null && (rhsBinding instanceof GeneratedVariableBinding)
-        && rhsBinding.getName().startsWith("outer$");
+        && (rhsBinding.getName().equals("outer$") || rhsBinding.getName().startsWith("capture$"));
   }
 
   /**
@@ -336,6 +335,5 @@ public class InitializationNormalizer extends ErrorReportingASTVisitor {
     Types.addBinding(nameNode, binding);
     method.setName(nameNode);
     members.add(method);
-    Symbols.resolve(method, binding);
   }
 }

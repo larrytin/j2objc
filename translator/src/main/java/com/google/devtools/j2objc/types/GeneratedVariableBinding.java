@@ -17,7 +17,6 @@
 package com.google.devtools.j2objc.types;
 
 import com.google.common.base.Preconditions;
-import com.google.devtools.j2objc.sym.Symbols;
 
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.dom.IAnnotationBinding;
@@ -45,6 +44,7 @@ public class GeneratedVariableBinding implements IVariableBinding {
   private final boolean isField;
 
   public static final String UNNAMED_VARIABLE = "<unnamed-variable>";
+  public static final String PLACEHOLDER_NAME = "<placeholder-variable>";
 
   public GeneratedVariableBinding(String name, int modifiers, ITypeBinding type,
       boolean isField, boolean isParameter, @Nullable ITypeBinding declaringClass,
@@ -57,7 +57,6 @@ public class GeneratedVariableBinding implements IVariableBinding {
     this.declaringClass = declaringClass;
     this.declaringMethod = declaringMethod;
     this.isField = isField;
-    Symbols.resolve(this);
   }
 
   /**
@@ -76,6 +75,14 @@ public class GeneratedVariableBinding implements IVariableBinding {
   public GeneratedVariableBinding(ITypeBinding binding, boolean isField, boolean isParameter,
       ITypeBinding declaringClass, IMethodBinding declaringMethod) {
     this(UNNAMED_VARIABLE, 0, binding, isField, isParameter, declaringClass, declaringMethod);
+  }
+
+  public static GeneratedVariableBinding newPlaceholder() {
+    return new GeneratedVariableBinding(PLACEHOLDER_NAME, 0, null, false, false, null, null);
+  }
+
+  public static boolean isPlaceholder(IVariableBinding var) {
+    return var.getName().equals(PLACEHOLDER_NAME);
   }
 
   @Override

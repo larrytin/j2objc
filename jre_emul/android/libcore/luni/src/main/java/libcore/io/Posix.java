@@ -77,7 +77,7 @@ public final class Posix implements Os {
 
   public native void close(FileDescriptor javaFd) throws ErrnoException /*-[
     // Get the FileDescriptor's 'fd' field and clear it.
-    // We need to do this before we can throw an IOException (http://b/3222087).
+    // We need to do this before we can throw an IOException.
     int fd = (int) javaFd->descriptor_;
     javaFd->descriptor_ = -1L;
     [LibcoreIoPosix throwIfMinusOneWithNSString:@"close" withInt:close(fd)];
