@@ -15,6 +15,5 @@ Pod::Spec.new do |s|
   s.xcconfig = { 'GCC_WARN_MISSING_PARENTHESES' => 'NO', 'HEADER_SEARCH_PATHS' => \
     '"${PODS_ROOT}/jre_emul/dist/include" "${PODS_ROOT}/jre_emul/jre_emul/icu4c/i18n/include" "${PODS_ROOT}/jre_emul/jre_emul/icu4c/common"', \
     'OTHER_LDFLAGS' => '-licucore -lstdc++' }
-# USE_HEADERMAP = NO
 
 end
