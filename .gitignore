@@ -25,5 +25,6 @@ xcuserdata
 /build_result/
 /cycle_finder/build_result/
 /java_deps/build_result/
-/junit/build_result/
+/junit/build_result/*
+!/junit/build_result/junit/
 /translator/build_result/
