@@ -4,8 +4,8 @@
 # Change to where distribution was unzipped.
 J2OBJC_DIST = ~/dev/tools/lib/j2objc/dist
 
-SOURCE_DIR = src/main/java
-BUILD_DIR = target/generated_sources
+SOURCE_DIR = $(CURDIR)/src/main/java
+BUILD_DIR = $(CURDIR)/target/generated_sources
 JAVA_SOURCES = $(shell find $(SOURCE_DIR) -name *.java)
 JAVA_SOURCE_LIST = $(BUILD_DIR)/java.sources.list
 TEMP_OBJECTS = $(subst $(SOURCE_DIR), $(BUILD_DIR), $(JAVA_SOURCES))
@@ -13,8 +13,8 @@ OBJECTS = $(TEMP_OBJECTS:.java=.o)
 OBJC_SOURCES = $(OBJECTS:.o=.m)
 JAVA_LIB = $(BUILD_DIR)/libjava.a
 
-TEST_SOURCE_DIR = src/test/java
-TEST_BUILD_DIR = target/generated_tests
+TEST_SOURCE_DIR = $(CURDIR)/src/test/java
+TEST_BUILD_DIR = $(CURDIR)/target/generated_tests
 TEST_SOURCES = $(shell find $(TEST_SOURCE_DIR) -name *.java)
 TEST_SOURCE_LIST = $(TEST_BUILD_DIR)/test.sources.list
 TEMP_TEST_OBJCS = $(subst $(TEST_SOURCE_DIR), $(TEST_BUILD_DIR), $(TEST_SOURCES))
@@ -22,7 +22,7 @@ TEST_OBJCS = $(TEMP_TEST_OBJCS:.java=.o)
 TEST_OBJC_SOURCES = $(TEST_OBJCS:.o=.m)
 TEST_BINS = $(TEST_OBJCS:.o=)
 
-J2OBJC = $(J2OBJC_DIST)/j2objc
+J2OBJC = $(J2OBJC_DIST)/j2objc -g
 J2OBJCC = $(J2OBJC_DIST)/j2objcc
 JUNIT_JAR = $(J2OBJC_DIST)/lib/junit-4.10.jar
 

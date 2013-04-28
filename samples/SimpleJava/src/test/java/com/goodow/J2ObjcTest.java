@@ -17,6 +17,6 @@ import junit.framework.TestCase;
 
 public class J2ObjcTest extends TestCase {
   public void testJ2objc() {
-    System.out.println(J2Objc.HELLO);
+    System.out.println(J2Objc.HELLO.substring(20));
   }
 }
