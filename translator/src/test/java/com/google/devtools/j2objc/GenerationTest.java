@@ -16,16 +16,18 @@
 
 package com.google.devtools.j2objc;
 
+import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
 import com.google.common.io.Files;
 import com.google.devtools.j2objc.J2ObjC.Language;
 import com.google.devtools.j2objc.gen.ObjectiveCHeaderGenerator;
 import com.google.devtools.j2objc.gen.ObjectiveCImplementationGenerator;
+import com.google.devtools.j2objc.gen.ObjectiveCSegmentedHeaderGenerator;
 import com.google.devtools.j2objc.gen.SourceBuilder;
 import com.google.devtools.j2objc.gen.SourcePosition;
 import com.google.devtools.j2objc.gen.StatementGenerator;
 import com.google.devtools.j2objc.translate.DestructorGenerator;
-import com.google.devtools.j2objc.translate.InitializationNormalizer;
+import com.google.devtools.j2objc.util.NameTable;
 
 import junit.framework.TestCase;
 
@@ -38,9 +40,11 @@ import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Statement;
 
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.io.StringReader;
 import java.io.StringWriter;
 import java.io.UnsupportedEncodingException;
 import java.net.URL;
@@ -138,7 +142,7 @@ public abstract class GenerationTest extends TestCase {
       CompilationUnit unit = compileType(name, source, assertErrors);
       J2ObjC.initializeTranslation(unit);
       J2ObjC.removeDeadCode(unit, source);
-      J2ObjC.translate(unit, source);
+      J2ObjC.translate(unit);
       lastLog = stringWriter.toString();
       return unit;
     } finally {
@@ -262,6 +266,49 @@ public abstract class GenerationTest extends TestCase {
     }
   }
 
+  /**
+   * Asserts that translated source contains an ordered, consecutive list of lines
+   * (each line's leading and trailing whitespace is ignored).
+   */
+  protected void assertTranslatedLines(String translation, String... expectedLines)
+      throws IOException {
+    int nLines = expectedLines.length;
+    if (nLines < 2) {
+      assertTranslation(translation, nLines == 1 ? expectedLines[0] : null);
+      return;
+    }
+    if (!hasRegion(translation, expectedLines)) {
+      fail("expected:\"" + Joiner.on('\n').join(expectedLines) + "\" in:\n" + translation);
+    }
+  }
+
+  private boolean hasRegion(String s, String[] lines) throws IOException {
+    int index = s.indexOf(lines[0]);
+    if (index == -1) {
+      return false;
+    }
+    BufferedReader in = new BufferedReader(new StringReader(s.substring(index)));
+    try {
+      for (int i = 0; i < lines.length; i++) {
+        String nextLine = in.readLine();
+        if (nextLine == null) {
+          return false;
+        }
+        index += nextLine.length() + 1;  // Also skip trailing newline.
+        if (!nextLine.trim().equals(lines[i].trim())) {
+          if (i == 0) {
+            return false;
+          }
+          // Check if there is a subsequent match.
+          return hasRegion(s.substring(index), lines);
+        }
+      }
+      return true;
+    } finally {
+      in.close();
+    }
+  }
+
   protected void assertOccurrences(String translation, String expected, int times) {
     Matcher matcher = Pattern.compile(Pattern.quote(expected)).matcher(translation);
     int count = 0;
@@ -286,7 +333,7 @@ public abstract class GenerationTest extends TestCase {
       @Override
       public boolean visit(MethodDeclaration node) {
         String name = node.getName().getIdentifier();
-        if (name.equals(InitializationNormalizer.INIT_NAME) ||
+        if (name.equals(NameTable.INIT_NAME) ||
             name.equals(DestructorGenerator.FINALIZE_METHOD) ||
             name.equals(DestructorGenerator.DEALLOC_METHOD)) {
           return false;
@@ -336,7 +383,11 @@ public abstract class GenerationTest extends TestCase {
       CompilationUnit unit = translateType(typeName, source);
       assertNoCompilationErrors(unit);
       String sourceName = typeName + ".java";
-      ObjectiveCHeaderGenerator.generate(sourceName, source, unit);
+      if (Options.generateSegmentedHeaders()) {
+        ObjectiveCSegmentedHeaderGenerator.generate(sourceName, source, unit);
+      } else {
+        ObjectiveCHeaderGenerator.generate(sourceName, source, unit);
+      }
       ObjectiveCImplementationGenerator.generate(sourceName, Language.OBJECTIVE_C, unit, source);
       lastLog += stringWriter.toString();
       return getTranslatedFile(fileName);
@@ -385,5 +436,13 @@ public abstract class GenerationTest extends TestCase {
     if (!lastLog.contains(expectedText)) {
       fail("expected:\"" + expectedText + "\" in:\n" + lastLog);
     }
+  }
+
+  protected void resetWarningCount() {
+    J2ObjC.resetWarnings();
+  }
+
+  protected void resetErrorCount() {
+    J2ObjC.resetErrors();
   }
 }

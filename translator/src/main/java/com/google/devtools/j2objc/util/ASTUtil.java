@@ -14,35 +14,49 @@
 
 package com.google.devtools.j2objc.util;
 
+import com.google.common.collect.Lists;
+
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
+import org.eclipse.jdt.core.dom.Annotation;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.ArrayCreation;
 import org.eclipse.jdt.core.dom.ArrayInitializer;
 import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.BodyDeclaration;
+import org.eclipse.jdt.core.dom.CatchClause;
 import org.eclipse.jdt.core.dom.ChildPropertyDescriptor;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
+import org.eclipse.jdt.core.dom.Comment;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.ConstructorInvocation;
 import org.eclipse.jdt.core.dom.EnumConstantDeclaration;
+import org.eclipse.jdt.core.dom.EnumDeclaration;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.FieldDeclaration;
+import org.eclipse.jdt.core.dom.ForStatement;
 import org.eclipse.jdt.core.dom.IExtendedModifier;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.ParameterizedType;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.StructuralPropertyDescriptor;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SwitchStatement;
-import org.eclipse.jdt.core.dom.SynchronizedStatement;
+import org.eclipse.jdt.core.dom.TryStatement;
+import org.eclipse.jdt.core.dom.Type;
+import org.eclipse.jdt.core.dom.TypeDeclaration;
+import org.eclipse.jdt.core.dom.TypeParameter;
+import org.eclipse.jdt.core.dom.UnionType;
 import org.eclipse.jdt.core.dom.VariableDeclarationExpression;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Utility methods for manipulating AST nodes.
@@ -95,6 +109,11 @@ public final class ASTUtil {
   }
 
   @SuppressWarnings("unchecked")
+  public static List<Expression> getArguments(EnumConstantDeclaration node) {
+    return node.arguments();
+  }
+
+  @SuppressWarnings("unchecked")
   public static List<Expression> getExtendedOperands(InfixExpression expr) {
     return expr.extendedOperands();
   }
@@ -111,6 +130,11 @@ public final class ASTUtil {
   }
 
   @SuppressWarnings("unchecked")
+  public static List<VariableDeclarationFragment> getFragments(FieldDeclaration node) {
+    return node.fragments();
+  }
+
+  @SuppressWarnings("unchecked")
   public static List<BodyDeclaration> getBodyDeclarations(AbstractTypeDeclaration node) {
     return node.bodyDeclarations();
   }
@@ -120,9 +144,80 @@ public final class ASTUtil {
     return node.bodyDeclarations();
   }
 
+  public static List<BodyDeclaration> getBodyDeclarations(ASTNode node) {
+    if (node instanceof AbstractTypeDeclaration) {
+      return getBodyDeclarations((AbstractTypeDeclaration) node);
+    } else if (node instanceof AnonymousClassDeclaration) {
+      return getBodyDeclarations((AnonymousClassDeclaration) node);
+    } else {
+      throw new AssertionError(
+          "node type does not contains body declarations: " + node.getClass().getSimpleName());
+    }
+  }
+
   @SuppressWarnings("unchecked")
   public static List<IExtendedModifier> getModifiers(BodyDeclaration node) {
     return node.modifiers();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<IExtendedModifier> getModifiers(VariableDeclarationStatement node) {
+    return node.modifiers();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<IExtendedModifier> getModifiers(VariableDeclarationExpression node) {
+    return node.modifiers();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<IExtendedModifier> getModifiers(SingleVariableDeclaration node) {
+    return node.modifiers();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<Expression> getExpressions(ArrayInitializer node) {
+    return node.expressions();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<Expression> getDimensions(ArrayCreation node) {
+    return node.dimensions();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<Expression> getInitializers(ForStatement node) {
+    return node.initializers();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<Expression> getUpdaters(ForStatement node) {
+    return node.updaters();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<Type> getSuperInterfaceTypes(TypeDeclaration node) {
+    return node.superInterfaceTypes();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<Type> getTypeBounds(TypeParameter node) {
+    return node.typeBounds();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<TypeParameter> getTypeParameters(MethodDeclaration node) {
+    return node.typeParameters();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<Type> getTypeArguments(ParameterizedType node) {
+    return node.typeArguments();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<EnumConstantDeclaration> getEnumConstants(EnumDeclaration node) {
+    return node.enumConstants();
   }
 
   @SuppressWarnings("unchecked")
@@ -131,68 +226,143 @@ public final class ASTUtil {
   }
 
   @SuppressWarnings("unchecked")
-  public static void setProperty(ASTNode node, Expression expr) {
+  public static List<Comment> getCommentList(CompilationUnit unit) {
+    return unit.getCommentList();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<Type> getTypes(UnionType unionType) {
+    return unionType.types();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<VariableDeclarationExpression> getResources(TryStatement tryStatement) {
+    return tryStatement.resources();
+  }
+
+  @SuppressWarnings("unchecked")
+  public static List<CatchClause> getCatchClauses(TryStatement node) {
+    return node.catchClauses();
+  }
+
+  @SuppressWarnings({"unchecked", "rawtypes"})
+  public static void setProperty(ASTNode node, ASTNode newNode) {
     ASTNode parent = node.getParent();
     StructuralPropertyDescriptor locator = node.getLocationInParent();
     if (locator instanceof ChildPropertyDescriptor) {
-      parent.setStructuralProperty(locator, expr);
+      parent.setStructuralProperty(locator, newNode);
     } else {
       // JDT doesn't directly support ChildListProperty replacement.
-      List<Expression> args;
-      if (parent instanceof MethodInvocation) {
-        args = ((MethodInvocation) parent).arguments();
-      } else if (parent instanceof ConstructorInvocation) {
-        args = ((ConstructorInvocation) parent).arguments();
-      } else if (parent instanceof ClassInstanceCreation) {
-        args = ((ClassInstanceCreation) parent).arguments();
-      } else if (parent instanceof InfixExpression) {
-        args = ((InfixExpression) parent).extendedOperands();
-      } else if (parent instanceof SynchronizedStatement) {
-        SynchronizedStatement stmt = (SynchronizedStatement) parent;
-        if (node.equals(stmt.getExpression())) {
-          stmt.setExpression((Expression) node);
-        }
-        return;
-      } else if (parent instanceof SuperConstructorInvocation) {
-        args = ((SuperConstructorInvocation) parent).arguments();
-      } else if (parent instanceof ArrayCreation) {
+      List args;
+      if (parent instanceof ArrayCreation) {
         args = ((ArrayCreation) parent).dimensions();
       } else if (parent instanceof ArrayInitializer) {
         args = ((ArrayInitializer) parent).expressions();
+      } else if (parent instanceof Block) {
+        args = ((Block) parent).statements();
+      } else if (parent instanceof ClassInstanceCreation) {
+        args = ((ClassInstanceCreation) parent).arguments();
+      } else if (parent instanceof ConstructorInvocation) {
+        args = ((ConstructorInvocation) parent).arguments();
       } else if (parent instanceof EnumConstantDeclaration) {
         args = ((EnumConstantDeclaration) parent).arguments();
+      } else if (parent instanceof InfixExpression) {
+        args = ((InfixExpression) parent).extendedOperands();
+      } else if (parent instanceof MethodInvocation) {
+        args = ((MethodInvocation) parent).arguments();
+      } else if (parent instanceof SuperConstructorInvocation) {
+        args = ((SuperConstructorInvocation) parent).arguments();
+      } else if (parent instanceof SuperMethodInvocation) {
+        args = ((SuperMethodInvocation) parent).arguments();
+      } else if (parent instanceof SwitchStatement) {
+        args = ((SwitchStatement) parent).statements();
+      } else if (parent instanceof TypeDeclaration) {
+        args = ((TypeDeclaration) parent).superInterfaceTypes();
       } else {
         throw new AssertionError("unknown parent node type: " + parent.getClass().getSimpleName());
       }
       for (int i = 0; i < args.size(); i++) {
         if (node.equals(args.get(i))) {
-          args.set(i, expr);
+          args.set(i, newNode);
         }
       }
     }
   }
 
-  @SuppressWarnings("unchecked")
-  public static void setProperty(ASTNode node, Statement stmt) {
+  /**
+   * Returns the given statement as a list of statements that can be added to.
+   * If node is a Block, then returns it's statement list. If node is the direct
+   * child of a Block, returns the sublist containing node as the only element.
+   * Otherwise, creates a new Block node in the place of node and returns its
+   * list of statements.
+   */
+  public static List<Statement> asStatementList(Statement node) {
+    if (node instanceof Block) {
+      return getStatements((Block) node);
+    }
     ASTNode parent = node.getParent();
-    StructuralPropertyDescriptor locator = node.getLocationInParent();
-    if (locator instanceof ChildPropertyDescriptor) {
-      parent.setStructuralProperty(locator, stmt);
-    } else {
-      // JDT doesn't directly support ChildListProperty replacement.
-      List<Statement> args;
-      if (parent instanceof Block) {
-        args = ((Block) parent).statements();
-      } else if (parent instanceof SwitchStatement) {
-        args = ((SwitchStatement) parent).statements();
-      } else {
-        throw new AssertionError("unknown parent node type: " + parent.getClass().getSimpleName());
-      }
-      for (int i = 0; i < args.size(); i++) {
-        if (node.equals(args.get(i))) {
-          args.set(i, stmt);
+    if (parent instanceof Block) {
+      List<Statement> stmts = getStatements((Block) parent);
+      for (int i = 0; i < stmts.size(); i++) {
+        if (stmts.get(i) == node) {
+          return stmts.subList(i, i + 1);
         }
       }
     }
+    Block block = node.getAST().newBlock();
+    setProperty(node, block);
+    getStatements(block).add(node);
+    return getStatements(block);
+  }
+
+  public static void insertAfter(Statement node, Statement toInsert) {
+    asStatementList(node).add(toInsert);
+  }
+
+  public static void insertBefore(Statement node, Statement toInsert) {
+    asStatementList(node).add(0, toInsert);
+  }
+
+  @SuppressWarnings("unchecked")
+  public static Map<String, Object> getProperties(ASTNode node) {
+    return node.properties();
+  }
+
+  public static List<Annotation> getRuntimeAnnotations(List<IExtendedModifier> modifiers) {
+    List<Annotation> runtimeAnnotations = Lists.newArrayList();
+    for (IExtendedModifier modifier : modifiers) {
+      if (BindingUtil.isRuntimeAnnotation(modifier)) {
+        runtimeAnnotations.add((Annotation) modifier);
+      }
+    }
+    return runtimeAnnotations;
+  }
+
+  /**
+   * Returns the type declaration which the specified node is part of.
+   */
+  public static AbstractTypeDeclaration getOwningType(ASTNode node) {
+    ASTNode n = node;
+    while (n != null) {
+      if (n instanceof AbstractTypeDeclaration) {
+        return (AbstractTypeDeclaration) n;
+      }
+      n = n.getParent();
+    }
+    return null;
+  }
+
+  /**
+   * Returns the method which is the parent of the specified node.
+   */
+  public static MethodDeclaration getOwningMethod(ASTNode node) {
+    ASTNode n = node;
+    while (n != null) {
+      if (n instanceof MethodDeclaration) {
+        return (MethodDeclaration) n;
+      }
+      n = n.getParent();
+    }
+    return null;
   }
 }

@@ -18,6 +18,7 @@ package com.google.devtools.j2objc.types;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Lists;
+import com.google.devtools.j2objc.util.NameTable;
 
 import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.dom.IAnnotationBinding;
@@ -25,11 +26,9 @@ import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
-import org.eclipse.jdt.core.dom.MethodDeclaration;
-import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
-import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.internal.compiler.ast.ASTNode;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -38,58 +37,58 @@ import java.util.List;
  * @author Tom Ball
  */
 public class GeneratedMethodBinding implements IMethodBinding {
+  private final IMethodBinding delegate;
   private final String name;
   private final int modifiers;
-  private final List<IBinding> parameters = Lists.newArrayList();
+  private final List<ITypeBinding> parameters = Lists.newArrayList();
   private final ITypeBinding returnType;
+  private final IMethodBinding methodDeclaration;
   private ITypeBinding declaringClass;
   private final boolean varargs;
   private final boolean isConstructor;
   private final boolean isSynthetic;
 
-  public GeneratedMethodBinding(String name, int modifiers, ITypeBinding returnType,
-      ITypeBinding declaringClass, boolean isConstructor, boolean varargs, boolean isSynthetic) {
-    Preconditions.checkNotNull(name);
-    this.name = name;
+  public GeneratedMethodBinding(
+      IMethodBinding delegate, String name, int modifiers, ITypeBinding returnType,
+      IMethodBinding methodDeclaration, ITypeBinding declaringClass, boolean isConstructor,
+      boolean varargs, boolean isSynthetic) {
+    this.delegate = delegate;
+    this.name = Preconditions.checkNotNull(name);
     this.modifiers = modifiers;
-    Preconditions.checkNotNull(declaringClass);
     this.returnType = returnType;
-    Preconditions.checkNotNull(declaringClass);
+    this.methodDeclaration = methodDeclaration;
     this.declaringClass = declaringClass;
     this.isConstructor = isConstructor;
     this.varargs = varargs;
     this.isSynthetic = isSynthetic;
   }
 
-  public GeneratedMethodBinding(MethodDeclaration m, ITypeBinding declaringClass,
-      boolean isSynthetic) {
-    this(m.getName().getIdentifier(), m.getModifiers(), getReturnType(m),
-        declaringClass, m.isConstructor(), m.isVarargs(), isSynthetic);
-
-    @SuppressWarnings("unchecked") // safe by definition
-    List<SingleVariableDeclaration> params = m.parameters();
-    for (SingleVariableDeclaration param : params) {
-      GeneratedVariableBinding gvb = new GeneratedVariableBinding(param.getName().getIdentifier(),
-        param.getModifiers(), Types.getTypeBinding(param), false, true, declaringClass, this);
-      parameters.add(gvb);
-    }
-  }
-
   /**
    * Clone a method binding, so parameters can be added to it.
    */
   public GeneratedMethodBinding(IMethodBinding m) {
-    this(m.getName(), m.getModifiers(), m.getReturnType(), m.getDeclaringClass(),
+    this(null, m.getName(), m.getModifiers(), m.getReturnType(), null, m.getDeclaringClass(),
         m.isConstructor(), m.isVarargs(), m.isSynthetic());
-    for (ITypeBinding paramType : m.getParameterTypes()) {
-      parameters.add(
-          new GeneratedVariableBinding(paramType, false, true, m.getDeclaringClass(), m));
-    }
+    addParameters(m);
   }
 
-  private static ITypeBinding getReturnType(MethodDeclaration method) {
-    Type returnType = method.getReturnType2();
-    return returnType != null ? Types.getTypeBinding(returnType) : null;
+  public static GeneratedMethodBinding newMethod(
+      String name, int modifiers, ITypeBinding returnType, ITypeBinding declaringClass) {
+    return new GeneratedMethodBinding(
+        null, name, modifiers, returnType, null, declaringClass, false, false, true);
+  }
+
+  public static GeneratedMethodBinding newConstructor(ITypeBinding clazz, int modifiers) {
+    return new GeneratedMethodBinding(
+        null, NameTable.INIT_NAME, modifiers, Types.mapTypeName("void"), null, clazz, true, false,
+        true);
+  }
+
+  public static GeneratedMethodBinding newOverridingMethod(
+      IMethodBinding m, ITypeBinding declaringClass) {
+    return new GeneratedMethodBinding(
+        m, m.getName(), m.getModifiers(), m.getReturnType(), null, declaringClass,
+        m.isConstructor(), m.isVarargs(), m.isSynthetic());
   }
 
   @Override
@@ -173,23 +172,19 @@ public class GeneratedMethodBinding implements IMethodBinding {
 
   @Override
   public ITypeBinding[] getParameterTypes() {
-    List<ITypeBinding> types = Lists.newArrayList();
-    for (IBinding param : parameters) {
-      if (param instanceof IVariableBinding) {
-        types.add(((IVariableBinding) param).getType());
-      } else {
-        types.add((ITypeBinding) param);
-      }
-    }
-    return types.toArray(new ITypeBinding[types.size()]);
+    return parameters.toArray(new ITypeBinding[parameters.size()]);
   }
 
-  public void addParameter(IBinding param) {
+  public void addParameter(ITypeBinding param) {
     parameters.add(param);
   }
 
-  public void addParameter(int index, IBinding param) {
+  public void addParameter(int index, ITypeBinding param) {
     parameters.add(index, param);
+  }
+
+  public void addParameters(IMethodBinding method) {
+    parameters.addAll(Arrays.asList(method.getParameterTypes()));
   }
 
   @Override
@@ -230,7 +225,7 @@ public class GeneratedMethodBinding implements IMethodBinding {
 
   @Override
   public IMethodBinding getMethodDeclaration() {
-    return this;
+    return methodDeclaration != null ? methodDeclaration : this;
   }
 
   @Override
@@ -240,7 +235,7 @@ public class GeneratedMethodBinding implements IMethodBinding {
 
   @Override
   public boolean isSubsignature(IMethodBinding otherMethod) {
-    return false;
+    return delegate != null && delegate.isSubsignature(otherMethod);
   }
 
   @Override
@@ -250,8 +245,7 @@ public class GeneratedMethodBinding implements IMethodBinding {
 
   @Override
   public boolean overrides(IMethodBinding method) {
-    // No generated methods override other methods.
-    return false;
+    return delegate != null && (delegate.equals(method) || delegate.overrides(method));
   }
 
   @Override

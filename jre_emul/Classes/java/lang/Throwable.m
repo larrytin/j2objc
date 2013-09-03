@@ -31,8 +31,11 @@
 #import "java/lang/System.h"
 
 #import <TargetConditionals.h>
-#ifndef TARGET_OS_IPHONE
-#import <NSExceptionHandler.h>
+#import <execinfo.h>
+
+#ifndef MAX_STACK_FRAMES
+// This defines the upper limit of the stack frames for any exception.
+#define MAX_STACK_FRAMES 128
 #endif
 
 @implementation JavaLangThrowable
@@ -47,16 +50,14 @@
                            reason:message
                          userInfo:nil])) {
     JreMemDebugAdd(self);
-#if __has_feature(objc_arc)
-    cause = causeArg;
-    detailMessage = message;
-    stackTrace = [JavaLangThrowable stackTraceWithSymbols:[NSThread callStackSymbols]];
-#else
-    cause = [causeArg retain];
-    detailMessage = [message retain];
-    stackTrace =
-        [[JavaLangThrowable stackTraceWithSymbols:[NSThread callStackSymbols]] retain];
-#endif
+    cause = RETAIN(causeArg);
+    detailMessage = RETAIN(message);
+
+    void *callStack[MAX_STACK_FRAMES];
+    unsigned nFrames = backtrace(callStack, MAX_STACK_FRAMES);
+    stackTrace = RETAIN([JavaLangThrowable stackTrace:callStack
+                                                count:nFrames]);
+    suppressedExceptions = nil;
   }
   return self;
 }
@@ -79,16 +80,22 @@
                            withJavaLangThrowable:causeArg];
 }
 
-+ (IOSObjectArray *)stackTraceWithSymbols:(NSArray *)symbols {
-  IOSObjectArray *stackTrace = [IOSObjectArray arrayWithLength:[symbols count] type:
+- (id)initWithNSString:(NSString *)message
+ withJavaLangThrowable:(JavaLangThrowable *)causeArg
+              withBOOL:(BOOL)enableSuppression
+              withBOOL:(BOOL)writeableStackTrace {
+  return [self initJavaLangThrowableWithNSString:message
+                           withJavaLangThrowable:causeArg];
+}
+
++ (IOSObjectArray *)stackTrace:(void **)addresses
+                         count:(unsigned)count {
+  IOSObjectArray *stackTrace = [IOSObjectArray arrayWithLength:count type:
       [IOSClass classWithClass:[JavaLangStackTraceElement class]]];
-  for (int i = 0; i < [symbols count]; i++) {
-    NSString *symbol = [symbols objectAtIndex:i];
-    JavaLangStackTraceElement *element =
-        AUTORELEASE([[JavaLangStackTraceElement alloc] initWithNSString:nil
-                                                           withNSString:symbol
-                                                           withNSString:nil
-                                                                withInt:-1]);
+  for (int i = 0; i < count; i++) {
+    JavaLangStackTraceElement *element = AUTORELEASE(
+        [[JavaLangStackTraceElement alloc]
+         initWithLongInt:(long long int)addresses[i]]);
     [stackTrace replaceObjectAtIndex:i withObject:element];
   }
   return stackTrace;
@@ -115,7 +122,7 @@
 }
 
 - (JavaLangThrowable *)initCauseWithJavaLangThrowable:
-    (JavaLangThrowable *)causeArg OBJC_METHOD_FAMILY_NONE {
+    (JavaLangThrowable *)causeArg {
   if (self->cause != nil) {
     id exception = [[JavaLangIllegalStateException alloc]
                     initWithNSString:@"Can't overwrite cause"];
@@ -166,13 +173,50 @@
   }
 }
 
-- (void)setStackTraceWithJavaLangStackTraceElementArray:(IOSObjectArray *)stackTraceArg {
+- (void)setStackTraceWithJavaLangStackTraceElementArray:
+    (IOSObjectArray *)stackTraceArg {
+  nil_chk(stackTraceArg);
+  int count = [stackTraceArg count];
+  for (int i = 0; i < count; i++) {
+    nil_chk([stackTraceArg objectAtIndex:i]);
+  }
 #if __has_feature(objc_arc)
   stackTrace = stackTraceArg;
 #else
   [stackTrace autorelease];
   stackTrace = [stackTraceArg retain];
 #endif
+}
+
+- (void)addSuppressedWithJavaLangThrowable:(JavaLangThrowable *)exception {
+  nil_chk(exception);
+  if (exception == self) {
+    @throw AUTORELEASE([[JavaLangIllegalArgumentException alloc] init]);
+  }
+  NSUInteger existingCount =
+      suppressedExceptions ? [suppressedExceptions count] : 0;
+  IOSObjectArray *newArray = [[IOSObjectArray alloc]
+      initWithLength:existingCount + 1
+                type:[IOSClass classWithClass:[JavaLangThrowable class]]];
+  for (NSUInteger i = 0; i < existingCount; i++) {
+    [newArray replaceObjectAtIndex:i
+                        withObject:[suppressedExceptions objectAtIndex:i]];
+  }
+  [newArray replaceObjectAtIndex:existingCount
+                      withObject:exception];
+#if ! __has_feature(objc_arc)
+  if (suppressedExceptions) {
+    [suppressedExceptions release];
+  }
+#endif
+  suppressedExceptions = newArray;
+}
+
+- (IOSObjectArray *)getSuppressed {
+  return suppressedExceptions
+      ? [IOSObjectArray arrayWithArray:suppressedExceptions]
+      : [IOSObjectArray arrayWithLength:0
+          type:[IOSClass classWithClass:[JavaLangThrowable class]]];
 }
 
 - (NSString *)description {
@@ -193,6 +237,7 @@
   JreMemDebugRemove(self);
   [cause release];
   [detailMessage release];
+  [stackTrace release];
   [super dealloc];
 }
 #endif

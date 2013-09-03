@@ -16,9 +16,6 @@
 
 package com.google.devtools.j2objc.types;
 
-import org.eclipse.jdt.core.IJavaElement;
-import org.eclipse.jdt.core.dom.IAnnotationBinding;
-import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 
@@ -27,176 +24,81 @@ import org.eclipse.jdt.core.dom.ITypeBinding;
  *
  * @author Tom Ball
  */
-public class IOSMethodBinding implements IMethodBinding {
-  private final String name;
-  private final IMethodBinding delegate;
-  private final ITypeBinding clazz;
-  private final ITypeBinding returnType;
-  private final boolean hasVarArgsTarget;
+public class IOSMethodBinding extends GeneratedMethodBinding {
 
-  public IOSMethodBinding(String name, IMethodBinding originalBinding, ITypeBinding clazz) {
-    this(name, originalBinding, clazz, originalBinding.getReturnType(),
-        originalBinding.isVarargs());
+  private final IOSMethod iosMethod;
+
+  private IOSMethodBinding(
+      IOSMethod iosMethod, IMethodBinding original, int modifiers, ITypeBinding returnType,
+      IMethodBinding methodDeclaration, ITypeBinding declaringClass, boolean varargs) {
+    super(original, iosMethod.getName(), modifiers, returnType, methodDeclaration, declaringClass,
+          false, varargs, true);
+    this.iosMethod = iosMethod;
   }
 
-  public IOSMethodBinding(String name, IMethodBinding originalBinding, ITypeBinding clazz,
-      ITypeBinding returnType, boolean hasVarArgs) {
-    this.name = name;
-    delegate = originalBinding;
-    this.clazz = clazz;
-    this.returnType = returnType;
-    if (clazz instanceof IOSTypeBinding) {
-      ((IOSTypeBinding) clazz).addMethod(this);
+  public static IOSMethodBinding newMappedMethod(IOSMethod iosMethod, IMethodBinding original) {
+    ITypeBinding returnType =
+        original.isConstructor() ? original.getDeclaringClass() : original.getReturnType();
+    ITypeBinding declaringClass = Types.resolveIOSType(iosMethod.getDeclaringClass());
+    if (declaringClass == null) {
+      declaringClass = IOSTypeBinding.newUnmappedClass(iosMethod.getDeclaringClass());
     }
-    this.hasVarArgsTarget = hasVarArgs;
+    IOSMethodBinding binding = new IOSMethodBinding(
+        iosMethod, original, original.getModifiers(), returnType, null, declaringClass,
+        original.isVarargs());
+    binding.addParameters(original);
+    return binding;
   }
 
-  @Override
-  public IAnnotationBinding[] getAnnotations() {
-    return new IAnnotationBinding[0];
+  public static IOSMethodBinding newMethod(
+      IOSMethod iosMethod, int modifiers, ITypeBinding returnType, ITypeBinding declaringClass) {
+    return new IOSMethodBinding(
+        iosMethod, null, modifiers, returnType, null, declaringClass, false);
   }
 
-  @Override
-  public int getKind() {
-    return IBinding.METHOD;
+  public static IOSMethodBinding newTypedInvocation(IOSMethodBinding m, ITypeBinding returnType) {
+    IOSMethodBinding binding = new IOSMethodBinding(
+        m.getIOSMethod(), null, m.getModifiers(), returnType, m, m.getDeclaringClass(),
+        m.isVarargs());
+    binding.addParameters(m);
+    return binding;
   }
 
-  @Override
-  public int getModifiers() {
-    return delegate.getModifiers();
+  public static IOSMethodBinding newFunction(
+      String name, ITypeBinding returnType, ITypeBinding declaringClass,
+      ITypeBinding... paramTypes) {
+    IOSMethodBinding binding = new IOSMethodBinding(
+        IOSMethod.newFunction(name), null, 0, returnType, null, declaringClass, false);
+    for (ITypeBinding paramType : paramTypes) {
+      binding.addParameter(paramType);
+    }
+    return binding;
   }
 
-  @Override
-  public boolean isDeprecated() {
-    return false;
+  public static IOSMethodBinding newDereference(ITypeBinding type) {
+    return new IOSMethodBinding(IOSMethod.DEREFERENCE, null, 0, type, null, null, false);
   }
 
-  @Override
-  public boolean isRecovered() {
-    return false;
+  public static IOSMethodBinding newAddressOf(ITypeBinding type) {
+    return new IOSMethodBinding(IOSMethod.ADDRESS_OF, null, 0, type, null, null, false);
   }
 
-  @Override
-  public boolean isSynthetic() {
-    return true;
-  }
-
-  @Override
-  public IJavaElement getJavaElement() {
-    return delegate.getJavaElement();
-  }
-
-  @Override
-  public String getKey() {
-    return delegate.getKey();
-  }
-
-  @Override
-  public boolean isEqualTo(IBinding binding) {
-    return binding instanceof IOSMethodBinding
-      && delegate.isEqualTo(binding);
-  }
-
-  @Override
-  public boolean isConstructor() {
-    return delegate.isConstructor();
-  }
-
-  @Override
-  public boolean isDefaultConstructor() {
-    return delegate.isDefaultConstructor();
-  }
-
-  @Override
-  public String getName() {
-    return name;
-  }
-
-  @Override
-  public ITypeBinding getDeclaringClass() {
-    return clazz;
-  }
-
-  @Override
-  public Object getDefaultValue() {
+  public static IOSMethod getIOSMethod(IMethodBinding binding) {
+    if (binding instanceof IOSMethodBinding) {
+      return ((IOSMethodBinding) binding).getIOSMethod();
+    }
     return null;
   }
 
-  @Override
-  public IAnnotationBinding[] getParameterAnnotations(int paramIndex) {
-    return new IAnnotationBinding[0];
+  public IOSMethod getIOSMethod() {
+    return iosMethod;
   }
 
-  @Override
-  public ITypeBinding[] getParameterTypes() {
-    return delegate.getParameterTypes();
-  }
-
-  @Override
-  public ITypeBinding getReturnType() {
-    return returnType;
-  }
-
-  @Override
-  public ITypeBinding[] getExceptionTypes() {
-    return delegate.getExceptionTypes();
-  }
-
-  @Override
-  public ITypeBinding[] getTypeParameters() {
-    return new ITypeBinding[0];
-  }
-
-  @Override
-  public boolean isAnnotationMember() {
+  public static boolean hasVarArgsTarget(IMethodBinding method) {
+    IOSMethod iosMethod = getIOSMethod(method);
+    if (iosMethod != null) {
+      return iosMethod.isVarArgs();
+    }
     return false;
-  }
-
-  @Override
-  public boolean isGenericMethod() {
-    return false;
-  }
-
-  @Override
-  public boolean isParameterizedMethod() {
-    return false;
-  }
-
-  @Override
-  public ITypeBinding[] getTypeArguments() {
-    return new ITypeBinding[0];
-  }
-
-  @Override
-  public IMethodBinding getMethodDeclaration() {
-    return this;
-  }
-
-  @Override
-  public boolean isRawMethod() {
-    return true;
-  }
-
-  @Override
-  public boolean isSubsignature(IMethodBinding otherMethod) {
-    return delegate.isSubsignature(otherMethod);
-  }
-
-  @Override
-  public boolean isVarargs() {
-    return delegate.isVarargs();
-  }
-
-  @Override
-  public boolean overrides(IMethodBinding method) {
-    return delegate.equals(method) || delegate.overrides(method);
-  }
-
-  public IMethodBinding getDelegate() {
-    return delegate;
-  }
-
-  public boolean hasVarArgsTarget() {
-    return hasVarArgsTarget;
   }
 }

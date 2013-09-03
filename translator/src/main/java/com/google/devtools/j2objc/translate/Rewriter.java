@@ -16,42 +16,36 @@
 
 package com.google.devtools.j2objc.translate;
 
+import com.google.common.collect.LinkedListMultimap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.devtools.j2objc.types.GeneratedMethodBinding;
 import com.google.devtools.j2objc.types.GeneratedTypeBinding;
 import com.google.devtools.j2objc.types.GeneratedVariableBinding;
-import com.google.devtools.j2objc.types.IOSArrayTypeBinding;
-import com.google.devtools.j2objc.types.IOSMethodBinding;
 import com.google.devtools.j2objc.types.IOSVariableBinding;
 import com.google.devtools.j2objc.types.NodeCopier;
 import com.google.devtools.j2objc.types.Types;
 import com.google.devtools.j2objc.util.ASTUtil;
+import com.google.devtools.j2objc.util.BindingUtil;
 import com.google.devtools.j2objc.util.ErrorReportingASTVisitor;
 import com.google.devtools.j2objc.util.NameTable;
 
 import org.eclipse.jdt.core.dom.AST;
-import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTVisitor;
+import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
-import org.eclipse.jdt.core.dom.ArrayCreation;
-import org.eclipse.jdt.core.dom.ArrayInitializer;
 import org.eclipse.jdt.core.dom.Assignment;
 import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.BodyDeclaration;
-import org.eclipse.jdt.core.dom.BooleanLiteral;
 import org.eclipse.jdt.core.dom.BreakStatement;
-import org.eclipse.jdt.core.dom.CharacterLiteral;
 import org.eclipse.jdt.core.dom.ClassInstanceCreation;
 import org.eclipse.jdt.core.dom.ContinueStatement;
 import org.eclipse.jdt.core.dom.DoStatement;
 import org.eclipse.jdt.core.dom.EnhancedForStatement;
 import org.eclipse.jdt.core.dom.EnumDeclaration;
 import org.eclipse.jdt.core.dom.Expression;
-import org.eclipse.jdt.core.dom.ExpressionStatement;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.ForStatement;
-import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.IPackageBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
@@ -63,14 +57,12 @@ import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.Modifier.ModifierKeyword;
-import org.eclipse.jdt.core.dom.Name;
-import org.eclipse.jdt.core.dom.NumberLiteral;
+import org.eclipse.jdt.core.dom.ParenthesizedExpression;
 import org.eclipse.jdt.core.dom.PostfixExpression;
 import org.eclipse.jdt.core.dom.PrefixExpression;
 import org.eclipse.jdt.core.dom.PrimitiveType;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.ReturnStatement;
-import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.StringLiteral;
@@ -79,7 +71,6 @@ import org.eclipse.jdt.core.dom.SwitchStatement;
 import org.eclipse.jdt.core.dom.ThrowStatement;
 import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
-import org.eclipse.jdt.core.dom.TypeLiteral;
 import org.eclipse.jdt.core.dom.VariableDeclarationExpression;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
@@ -127,6 +118,12 @@ public class Rewriter extends ErrorReportingASTVisitor {
   public boolean visit(AnonymousClassDeclaration node) {
     return visitType(node.getAST(), Types.getTypeBinding(node), ASTUtil.getBodyDeclarations(node),
                      Modifier.NONE);
+  }
+
+  @Override
+  public boolean visit(AnnotationTypeDeclaration node) {
+    return visitType(node.getAST(), Types.getTypeBinding(node), ASTUtil.getBodyDeclarations(node),
+                     node.getModifiers());
   }
 
   private boolean visitType(
@@ -246,10 +243,42 @@ public class Rewriter extends ErrorReportingASTVisitor {
       SingleVariableDeclaration param = params.get(i);
       name = param.getName().getIdentifier();
       if (typeQualifierKeywords.contains(name)) {
-        IVariableBinding varBinding = param.resolveBinding();
+        IVariableBinding varBinding = Types.getVariableBinding(param);
         NameTable.rename(varBinding, name + "Arg");
       }
     }
+
+    // Rename any labels that have the same names; legal in Java but not C.
+    final Map<String, Integer> labelCounts = Maps.newHashMap();
+    final AST ast = node.getAST();
+    node.accept(new ASTVisitor() {
+      @Override
+      public void endVisit(LabeledStatement labeledStatement) {
+        final String name = labeledStatement.getLabel().getIdentifier();
+        int value = labelCounts.containsKey(name) ? labelCounts.get(name) + 1 : 1;
+        labelCounts.put(name, value);
+        if (value > 1) {
+          final String newName = name + '_' + value;
+          labeledStatement.setLabel(ASTFactory.newLabel(ast, newName));
+          // Update references to this label.
+          labeledStatement.accept(new ASTVisitor() {
+            @Override
+            public void endVisit(ContinueStatement node) {
+              if (node.getLabel() != null && node.getLabel().getIdentifier().equals(name)) {
+                node.setLabel(ASTFactory.newLabel(ast, newName));
+              }
+            }
+            @Override
+            public void endVisit(BreakStatement node) {
+              if (node.getLabel() != null && node.getLabel().getIdentifier().equals(name)) {
+                node.setLabel(ASTFactory.newLabel(ast, newName));
+              }
+            }
+          });
+
+        }
+      }
+    });
     return true;
   }
 
@@ -263,7 +292,7 @@ public class Rewriter extends ErrorReportingASTVisitor {
       return;
     }
     ITypeBinding comparableType =
-        Types.findInterface(binding.getDeclaringClass(), "java.lang.Comparable");
+        BindingUtil.findInterface(binding.getDeclaringClass(), "java.lang.Comparable");
     if (comparableType == null) {
       return;
     }
@@ -277,9 +306,11 @@ public class Rewriter extends ErrorReportingASTVisitor {
     AST ast = node.getAST();
     IVariableBinding param = Types.getVariableBinding(ASTUtil.getParameters(node).get(0));
 
-    Expression nullCheck = ASTFactory.createNullCheck(ast, param, false);
+    Expression nullCheck = ASTFactory.newInfixExpression(
+        ast, ASTFactory.newSimpleName(ast, param), InfixExpression.Operator.NOT_EQUALS,
+        ASTFactory.newNullLiteral(ast), ast.resolveWellKnownType("boolean"));
     Expression instanceofExpr = ASTFactory.newInstanceofExpression(
-        ast, ASTFactory.newSimpleName(ast, param), Types.makeType(typeArguments[0]));
+        ast, ASTFactory.newSimpleName(ast, param), typeArguments[0]);
     instanceofExpr = ASTFactory.newPrefixExpression(
         ast, PrefixExpression.Operator.NOT, instanceofExpr, "boolean");
 
@@ -287,9 +318,8 @@ public class Rewriter extends ErrorReportingASTVisitor {
         "java.lang.ClassCastException", ast.resolveWellKnownType("java.lang.RuntimeException"),
         false);
     ClassInstanceCreation newCce = ast.newClassInstanceCreation();
-    newCce.setType(Types.makeType(cceType));
-    Types.addBinding(newCce, new GeneratedMethodBinding(
-        "ClassCastException", 0, cceType, cceType, true, false, false));
+    newCce.setType(ASTFactory.newType(ast, cceType));
+    Types.addBinding(newCce, GeneratedMethodBinding.newConstructor(cceType, 0));
 
     ThrowStatement throwStmt = ast.newThrowStatement();
     throwStmt.setExpression(newCce);
@@ -299,7 +329,8 @@ public class Rewriter extends ErrorReportingASTVisitor {
 
     IfStatement ifStmt = ast.newIfStatement();
     ifStmt.setExpression(ASTFactory.newInfixExpression(
-        ast, nullCheck, InfixExpression.Operator.CONDITIONAL_AND, instanceofExpr, "boolean"));
+        ast, nullCheck, InfixExpression.Operator.CONDITIONAL_AND, instanceofExpr,
+        ast.resolveWellKnownType("boolean")));
     ifStmt.setThenStatement(ifBlock);
 
     ASTUtil.getStatements(node.getBody()).add(0, ifStmt);
@@ -308,9 +339,6 @@ public class Rewriter extends ErrorReportingASTVisitor {
   @Override
   public boolean visit(MethodInvocation node) {
     boolean visitChildren = true;
-    if (rewriteSystemOut(node)) {
-      visitChildren =  false;
-    }
     if (rewriteStringFormat(node)) {
       visitChildren =  false;
     }
@@ -345,38 +373,6 @@ public class Rewriter extends ErrorReportingASTVisitor {
     return null;
   }
 
-  /**
-   * Inserts a new statement after a given node. If node is a Block, appends
-   * toInsert to the end of the block. If node's parent is a Block, inserts
-   * directly after node. Otherwise, creates a new Block with node and toInsert
-   * as the only two statements.
-   */
-  private static <E extends Statement> E insertStatement(E node, Statement toInsert) {
-    if (node instanceof Block) {
-      ASTUtil.getStatements((Block) node).add(toInsert);
-      return node;
-    } else if (node.getParent() instanceof Block) {
-      List<Statement> stmts = ASTUtil.getStatements((Block) node.getParent());
-      // Find node in statement list, and add given statement after it.
-      for (int i = 0; i < stmts.size(); i++) {
-        if (stmts.get(i) == node) {
-          stmts.add(i + 1, toInsert);
-          break;
-        }
-      }
-    } else {
-      AST ast = node.getAST();
-      Block block = ast.newBlock();
-      List<Statement> stmts = ASTUtil.getStatements(block);
-      E oldNode = node;
-      node = NodeCopier.copySubtree(ast, node);
-      stmts.add(node);
-      stmts.add(toInsert);
-      ASTUtil.setProperty(oldNode, block);
-    }
-    return node;
-  }
-
   @Override
   public boolean visit(LabeledStatement node) {
     Statement loopBody = getLoopBody(node.getBody());
@@ -384,7 +380,7 @@ public class Rewriter extends ErrorReportingASTVisitor {
       return true;
     }
 
-    AST ast = node.getAST();
+    final AST ast = node.getAST();
     final String labelIdentifier = node.getLabel().getIdentifier();
 
     final boolean[] hasContinue = new boolean[1];
@@ -394,29 +390,34 @@ public class Rewriter extends ErrorReportingASTVisitor {
       public void endVisit(ContinueStatement node) {
         if (node.getLabel() != null && node.getLabel().getIdentifier().equals(labelIdentifier)) {
           hasContinue[0] = true;
-          node.setLabel(Types.newLabel("continue_" + labelIdentifier));
+          node.setLabel(ASTFactory.newLabel(ast, "continue_" + labelIdentifier));
         }
       }
       @Override
       public void endVisit(BreakStatement node) {
         if (node.getLabel() != null && node.getLabel().getIdentifier().equals(labelIdentifier)) {
           hasBreak[0] = true;
-          node.setLabel(Types.newLabel("break_" + labelIdentifier));
+          node.setLabel(ASTFactory.newLabel(ast, "break_" + labelIdentifier));
         }
       }
     });
 
     if (hasContinue[0]) {
       LabeledStatement newLabelStmt = ast.newLabeledStatement();
-      newLabelStmt.setLabel(Types.newLabel("continue_" + labelIdentifier));
+      newLabelStmt.setLabel(ASTFactory.newLabel(ast, "continue_" + labelIdentifier));
       newLabelStmt.setBody(ast.newEmptyStatement());
-      loopBody = insertStatement(loopBody, newLabelStmt);
+      // Put the loop body into an inner block so the continue label is outside
+      // the scope of any variable initializations.
+      Block newBlock = ast.newBlock();
+      ASTUtil.setProperty(loopBody, newBlock);
+      ASTUtil.getStatements(newBlock).add(loopBody);
+      ASTUtil.getStatements(newBlock).add(newLabelStmt);
     }
     if (hasBreak[0]) {
       LabeledStatement newLabelStmt = ast.newLabeledStatement();
-      newLabelStmt.setLabel(Types.newLabel("break_" + labelIdentifier));
+      newLabelStmt.setLabel(ASTFactory.newLabel(ast, "break_" + labelIdentifier));
       newLabelStmt.setBody(ast.newEmptyStatement());
-      node = insertStatement(node, newLabelStmt);
+      ASTUtil.insertAfter(node, newLabelStmt);
     }
 
     if (hasContinue[0] || hasBreak[0]) {
@@ -504,7 +505,8 @@ public class Rewriter extends ErrorReportingASTVisitor {
     VariableDeclarationExpression indexDecl = ASTFactory.newVariableDeclarationExpression(
         ast, indexVariable, ASTFactory.newNumberLiteral(ast, "0", "int"));
     InfixExpression loopCondition = ASTFactory.newInfixExpression(
-        ast, indexVariable, InfixExpression.Operator.LESS, sizeVariable, "boolean");
+        ast, indexVariable, InfixExpression.Operator.LESS, sizeVariable,
+        ast.resolveWellKnownType("boolean"));
     PostfixExpression incrementExpr = ASTFactory.newPostfixExpression(
         ast, indexVariable, PostfixExpression.Operator.INCREMENT);
 
@@ -527,11 +529,11 @@ public class Rewriter extends ErrorReportingASTVisitor {
   private Block makeIterableBlock(
       AST ast, Expression expression, ITypeBinding expressionType, IVariableBinding loopVariable,
       Block loopBody) {
-    ITypeBinding iterableType = Types.findInterface(expressionType, "java.lang.Iterable");
-    IMethodBinding iteratorMethod = Types.findDeclaredMethod(iterableType, "iterator");
+    ITypeBinding iterableType = BindingUtil.findInterface(expressionType, "java.lang.Iterable");
+    IMethodBinding iteratorMethod = BindingUtil.findDeclaredMethod(iterableType, "iterator");
     ITypeBinding iteratorType = iteratorMethod.getReturnType();
-    IMethodBinding hasNextMethod = Types.findDeclaredMethod(iteratorType, "hasNext");
-    IMethodBinding nextMethod = Types.findDeclaredMethod(iteratorType, "next");
+    IMethodBinding hasNextMethod = BindingUtil.findDeclaredMethod(iteratorType, "hasNext");
+    IMethodBinding nextMethod = BindingUtil.findDeclaredMethod(iteratorType, "next");
     assert hasNextMethod != null && nextMethod != null;
 
     IVariableBinding iteratorVariable = new GeneratedVariableBinding(
@@ -602,6 +604,26 @@ public class Rewriter extends ErrorReportingASTVisitor {
       stringExpr.setLeftOperand(nonStringExpr);
       Types.addBinding(stringExpr, ast.resolveWellKnownType("java.lang.String"));
       ASTUtil.setProperty(node, stringExpr);
+    } else if (op == InfixExpression.Operator.CONDITIONAL_AND) {
+      // Avoid logical-op-parentheses compiler warnings.
+      if (node.getParent() instanceof InfixExpression) {
+        InfixExpression parent = (InfixExpression) node.getParent();
+        if (parent.getOperator() == InfixExpression.Operator.CONDITIONAL_OR) {
+          AST ast = node.getAST();
+          ParenthesizedExpression expr =
+              ASTFactory.newParenthesizedExpression(ast, NodeCopier.copySubtree(ast, node));
+          ASTUtil.setProperty(node, expr);
+        }
+      }
+    } else if (op == InfixExpression.Operator.AND) {
+      // Avoid bitwise-op-parentheses compiler warnings.
+      if (node.getParent() instanceof InfixExpression &&
+          ((InfixExpression) node.getParent()).getOperator() == InfixExpression.Operator.OR) {
+        AST ast = node.getAST();
+        ParenthesizedExpression expr =
+            ASTFactory.newParenthesizedExpression(ast, NodeCopier.copySubtree(ast, node));
+        ASTUtil.setProperty(node, expr);
+      }
     }
   }
 
@@ -635,11 +657,13 @@ public class Rewriter extends ErrorReportingASTVisitor {
     AST ast = node.getAST();
     List<Statement> statements = ASTUtil.getStatements(node);
     int insertIdx = 0;
+    Block block = ast.newBlock();
+    List<Statement> blockStmts = ASTUtil.getStatements(block);
     for (int i = 0; i < statements.size(); i++) {
       Statement stmt = statements.get(i);
       if (stmt instanceof VariableDeclarationStatement) {
         VariableDeclarationStatement declStmt = (VariableDeclarationStatement) stmt;
-        statements.remove(i);
+        statements.remove(i--);
         List<VariableDeclarationFragment> fragments = ASTUtil.getFragments(declStmt);
         for (VariableDeclarationFragment decl : fragments) {
           Expression initializer = decl.getInitializer();
@@ -647,172 +671,19 @@ public class Rewriter extends ErrorReportingASTVisitor {
             Assignment assignment = ASTFactory.newAssignment(ast,
                 NodeCopier.copySubtree(ast, decl.getName()),
                 NodeCopier.copySubtree(ast, initializer));
-            statements.add(i++, ast.newExpressionStatement(assignment));
+            statements.add(++i, ast.newExpressionStatement(assignment));
             decl.setInitializer(null);
           }
         }
-        statements.add(insertIdx++, NodeCopier.copySubtree(ast, declStmt));
+        blockStmts.add(insertIdx++, NodeCopier.copySubtree(ast, declStmt));
       }
     }
-  }
-
-  @Override
-  public void endVisit(ArrayInitializer node) {
-    ASTNode nodeToReplace = node;
-    ASTNode parent = node.getParent();
-    if (parent instanceof ArrayCreation) {
-      // replace this redundant array creation node with its rewritten initializer.
-      nodeToReplace = parent;
+    if (blockStmts.size() > 0) {
+      // There is at least one variable declaration, so copy this switch
+      // statement into the new block and replace it in the parent list.
+      blockStmts.add(NodeCopier.copySubtree(ast, node));
+      ASTUtil.setProperty(node, block);
     }
-    ITypeBinding type = Types.getTypeBinding(node);
-    ASTUtil.setProperty(nodeToReplace, createIOSArrayInitializer(type, node));
-  }
-
-  /**
-   * Convert an array initializer into a init method on the equivalent
-   * IOSArray. This init method takes a C array and count, like
-   * NSArray.arrayWithObjects:count:. For example, "int[] a = { 1, 2, 3 };"
-   * translates to "[IOSIntArray initWithInts:(int[]){ 1, 2, 3 } count:3];".
-   */
-  private MethodInvocation createIOSArrayInitializer(ITypeBinding arrayType,
-      ArrayInitializer arrayInit) {
-    AST ast = arrayInit.getAST();
-
-    int dimensions = arrayType.getDimensions();
-    ITypeBinding componentType;
-    IOSArrayTypeBinding iosArrayBinding;
-    if (dimensions > 2) {
-      // This gets resolved into IOSObjectArray, for an array of arrays.
-      componentType = iosArrayBinding = Types.resolveArrayType(arrayType);
-    } else if (dimensions == 2) {
-      // Creates a single-dimension array type.
-      componentType = Types.resolveArrayType(arrayType.getElementType());
-      iosArrayBinding = Types.resolveArrayType(componentType);
-    } else {
-      componentType = Types.getTypeBinding(arrayInit).getComponentType();
-      iosArrayBinding = Types.resolveArrayType(componentType);
-    }
-
-    // Create IOS message.
-    MethodInvocation message = ast.newMethodInvocation();
-    SimpleName receiver = ast.newSimpleName(iosArrayBinding.getName());
-    Types.addBinding(receiver, iosArrayBinding);
-    message.setExpression(receiver);
-    String methodName = iosArrayBinding.getInitMethod();
-    SimpleName messageName = ast.newSimpleName(methodName);
-    GeneratedMethodBinding methodBinding = new GeneratedMethodBinding(methodName,
-        Modifier.PUBLIC | Modifier.STATIC, iosArrayBinding, iosArrayBinding, false, false, true);
-    Types.addBinding(messageName, methodBinding);
-    message.setName(messageName);
-    Types.addBinding(message, methodBinding);
-
-    // Pass array initializer as C-style array to message.
-    List<Expression> args = ASTUtil.getArguments(message);
-    ArrayInitializer newArrayInit = NodeCopier.copySubtree(ast, arrayInit);
-    args.add(newArrayInit);
-    GeneratedVariableBinding argBinding = new GeneratedVariableBinding(arrayType,
-        false, true, null, methodBinding);
-    methodBinding.addParameter(argBinding);
-    NumberLiteral arraySize =
-          ast.newNumberLiteral(Integer.toString(arrayInit.expressions().size()));
-    Types.addBinding(arraySize, ast.resolveWellKnownType("int"));
-    args.add(arraySize);
-    argBinding = new GeneratedVariableBinding(ast.resolveWellKnownType("int"),
-        false, true, null, methodBinding);
-    methodBinding.addParameter(argBinding);
-
-    // Specify type for object arrays.
-    if (iosArrayBinding.getName().equals("IOSObjectArray")) {
-      TypeLiteral typeLiteral = ast.newTypeLiteral();
-      typeLiteral.setType(Types.makeType(componentType));
-      Types.addBinding(typeLiteral, Types.getIOSClass());
-      args.add(typeLiteral);
-      argBinding = new GeneratedVariableBinding("type", 0, Types.getIOSClass(),
-          false, true, null, methodBinding);
-      methodBinding.addParameter(argBinding);
-    }
-
-    return message;
-  }
-
-  /**
-   * Rewrites System.out and System.err println calls as NSLog calls.
-   *
-   * @return true if the node was rewritten
-   */
-  // TODO(user): remove when there is iOS console support.
-  private boolean rewriteSystemOut(MethodInvocation node) {
-    Expression expression = node.getExpression();
-    if (expression instanceof Name) {
-      Name expr = (Name) node.getExpression();
-      IBinding binding = expr.resolveBinding();
-      if (binding instanceof IVariableBinding) {
-        IVariableBinding varBinding = (IVariableBinding) binding;
-        ITypeBinding type = varBinding.getDeclaringClass();
-        if (type == null) {
-          return false;
-        }
-        String clsName = type.getQualifiedName();
-        String varName = varBinding.getName();
-        if (clsName.equals("java.lang.System")
-            && (varName.equals("out") || varName.equals("err"))) {
-          // Change System.out.* or System.err.* to NSLog
-          AST ast = node.getAST();
-          MethodInvocation newInvocation = ast.newMethodInvocation();
-          IMethodBinding methodBinding = new IOSMethodBinding("NSLog",
-              Types.getMethodBinding(node), null);
-          Types.addBinding(newInvocation, methodBinding);
-          Types.addFunction(methodBinding);
-          newInvocation.setName(ast.newSimpleName("NSLog"));
-          Types.addBinding(newInvocation.getName(), methodBinding);
-          newInvocation.setExpression(null);
-
-          // Insert NSLog format argument
-          List<Expression> args = ASTUtil.getArguments(node);
-          if (args.size() == 1) {
-            Expression arg = args.get(0);
-            arg.accept(this);
-            String format = getFormatArgument(arg);
-            StringLiteral literal = ast.newStringLiteral();
-            literal.setLiteralValue(format);
-            Types.addBinding(literal, ast.resolveWellKnownType("java.lang.String"));
-            ASTUtil.getArguments(newInvocation).add(literal);
-
-            // JDT won't let nodes be re-parented, so copy and map.
-            Expression newArg = NodeCopier.copySubtree(ast, arg);
-            if (arg instanceof MethodInvocation) {
-              IMethodBinding argBinding = ((MethodInvocation) arg).resolveMethodBinding();
-              if (!argBinding.getReturnType().isPrimitive() &&
-                  !Types.isJavaStringType(argBinding.getReturnType())) {
-                IOSMethodBinding newBinding =
-                    new IOSMethodBinding("format", argBinding, Types.getNSString());
-                Types.addMappedInvocation(newArg, newBinding);
-              }
-            }
-            ASTUtil.getArguments(newInvocation).add(newArg);
-          } else if (args.size() > 1 && node.getName().getIdentifier().equals("printf")) {
-            ASTUtil.getArguments(newInvocation).addAll(NodeCopier.copySubtrees(ast, args));
-          } else if (args.size() == 0) {
-            // NSLog requires a format string.
-            StringLiteral literal = ast.newStringLiteral();
-            literal.setLiteralValue("");
-            Types.addBinding(literal,  ast.resolveWellKnownType("java.lang.String"));
-            ASTUtil.getArguments(newInvocation).add(literal);
-          }
-
-          // Replace old invocation with new.
-          ASTNode parent = node.getParent();
-          if (parent instanceof ExpressionStatement) {
-            ExpressionStatement stmt = (ExpressionStatement) parent;
-            stmt.setExpression(newInvocation);
-          } else {
-            throw new AssertionError("unknown parent type: " + parent.getClass().getSimpleName());
-          }
-          return true;
-        }
-      }
-    }
-    return false;
   }
 
   /**
@@ -821,7 +692,7 @@ public class Rewriter extends ErrorReportingASTVisitor {
    * @return true if the node was rewritten
    */
   private boolean rewriteStringFormat(MethodInvocation node) {
-    IMethodBinding binding = node.resolveMethodBinding();
+    IMethodBinding binding = Types.getMethodBinding(node);
     if (binding == null) {
       // No binding due to error already reported.
       return false;
@@ -836,15 +707,15 @@ public class Rewriter extends ErrorReportingASTVisitor {
         return false;
       }
       Expression first = args.get(0);
-      typeBinding = first.resolveTypeBinding();
+      typeBinding = Types.getTypeBinding(first);
       if (typeBinding.getQualifiedName().equals("java.util.Locale")) {
         args.remove(0); // discard locale parameter
         first = args.get(0);
-        typeBinding = first.resolveTypeBinding();
+        typeBinding = Types.getTypeBinding(first);
       }
       if (first instanceof StringLiteral) {
         String format = ((StringLiteral) first).getLiteralValue();
-        String convertedFormat = convertStringFormatString(format);
+        String convertedFormat = convertStringFormatString(format, args);
         if (!format.equals(convertedFormat)) {
           StringLiteral newLiteral = ast.newStringLiteral();
           newLiteral.setLiteralValue(convertedFormat);
@@ -858,59 +729,14 @@ public class Rewriter extends ErrorReportingASTVisitor {
   }
 
   /**
-   * Given a AST node, return the appropriate printf() format specifier.
-   */
-  private String getFormatArgument(ASTNode node) {
-    ITypeBinding type = Types.getTypeBinding(node);
-    AST ast = node.getAST();
-    if (node instanceof CharacterLiteral || type.isEqualTo(ast.resolveWellKnownType("char"))) {
-      return "%C";
-    }
-    if (node instanceof BooleanLiteral || type.isEqualTo(ast.resolveWellKnownType("boolean"))) {
-      return "%d";
-    }
-    if (type.isEqualTo(ast.resolveWellKnownType("byte")) ||
-        type.isEqualTo(ast.resolveWellKnownType("int")) ||
-        type.isEqualTo(ast.resolveWellKnownType("short"))) {
-      return "%d";
-    }
-    if (type.isEqualTo(ast.resolveWellKnownType("long"))) {
-      return "%lld";
-    }
-    if (type.isEqualTo(ast.resolveWellKnownType("float")) ||
-        type.isEqualTo(ast.resolveWellKnownType("double"))) {
-      return "%f";
-    }
-    if (node instanceof NumberLiteral) {
-      String token = ((NumberLiteral) node).getToken();
-      try {
-        Integer.parseInt(token);
-        return "%d";
-      } catch (NumberFormatException e) {
-        try {
-          Long.parseLong(token);
-          return "%lld";
-        } catch (NumberFormatException e2) {
-          try {
-            Double.parseDouble(token);
-            return "%f";
-          } catch (NumberFormatException e3) {
-            throw new AssertionError("unknown number literal format: \"" + token + "\"");
-          }
-        }
-      }
-    }
-    return "%@"; // object, including string
-  }
-
-  /**
    * Convert a Java string format string into a NSString equivalent.
    */
   @SuppressWarnings("fallthrough")
-  private String convertStringFormatString(String s) {
+  private String convertStringFormatString(String s, List<Expression> args) {
     if (s.isEmpty()) {
       return s;
     }
+    int iArg = 1;  // First argument after format string.
     char[] chars = s.toCharArray();
     StringBuffer result = new StringBuffer();
     boolean inSpecifier = false;
@@ -925,23 +751,37 @@ public class Rewriter extends ErrorReportingASTVisitor {
           case 'S':
             result.append('@');
             inSpecifier = false;
+            iArg++;
             break;
           case 'c':
           case 'C':
             result.append('C');
             inSpecifier = false;
+            iArg++;
             break;
           case 'h':
           case 'H':
             result.append('x');
             inSpecifier = false;
+            iArg++;
             break;
           case 'd':
+            if (Types.isLongType(Types.getTypeBinding(args.get(iArg)))) {
+              result.append("ll");
+            }
+            result.append(c);
+            inSpecifier = false;
+            iArg++;
+            break;
           case 'e':
           case 'f':
           case 'g':
           case 'o':
           case 'x':
+            result.append(c);
+            inSpecifier = false;
+            iArg++;
+            break;
           case '%':
             result.append(c);
             inSpecifier = false;
@@ -1005,32 +845,18 @@ public class Rewriter extends ErrorReportingASTVisitor {
 
   private MethodDeclaration createInterfaceMethodBody(
       AST ast, ITypeBinding typeBinding, IMethodBinding interfaceMethod) {
-    IMethodBinding methodBinding = new IOSMethodBinding(interfaceMethod.getName(), interfaceMethod,
-        typeBinding);
-
-    MethodDeclaration method = ast.newMethodDeclaration();
-    Types.addBinding(method, methodBinding);
-    method.setReturnType2(Types.makeType(interfaceMethod.getReturnType()));
-
-    SimpleName methodName = ast.newSimpleName(interfaceMethod.getName());
-    Types.addBinding(methodName, methodBinding);
-    method.setName(methodName);
-
-    ASTUtil.getModifiers(method).add(ast.newModifier(ModifierKeyword.PUBLIC_KEYWORD));
+    GeneratedMethodBinding methodBinding =
+        GeneratedMethodBinding.newOverridingMethod(interfaceMethod, typeBinding);
+    MethodDeclaration method = ASTFactory.newMethodDeclaration(ast, methodBinding);
 
     ITypeBinding[] parameterTypes = interfaceMethod.getParameterTypes();
     for (int i = 0; i < parameterTypes.length; i++) {
       ITypeBinding paramType = parameterTypes[i];
-      String paramName = "param" + i;
-      SingleVariableDeclaration param = ast.newSingleVariableDeclaration();
-      IVariableBinding paramBinding = IOSVariableBinding.newParameter(paramName, i, paramType,
-          methodBinding, paramType.getDeclaringClass(),
+      IVariableBinding paramBinding = IOSVariableBinding.newParameter(
+          "param" + i, i, paramType, methodBinding, paramType.getDeclaringClass(),
           Modifier.isFinal(paramType.getModifiers()));
-      Types.addBinding(param, paramBinding);
-      param.setName(ast.newSimpleName(paramName));
-      Types.addBinding(param.getName(), paramBinding);
-      param.setType(Types.makeType(paramType));
-      ASTUtil.getParameters(method).add(param);
+      ASTUtil.getParameters(method).add(ASTFactory.newSingleVariableDeclaration(ast, paramBinding));
+      methodBinding.addParameter(paramType);
     }
     return method;
   }
@@ -1116,21 +942,6 @@ public class Rewriter extends ErrorReportingASTVisitor {
         }
       }
     }
-
-    // Check all declared fields with method names.
-    addFields(typeBinding, true, false, fields);
-    for (IMethodBinding method : typeBinding.getDeclaredMethods()) {
-      String name = method.getName();
-      IVariableBinding field = fields.get(name);
-      if (field != null) {
-        IVariableBinding newField;
-        while ((newField = fields.get(name)) != null) {
-          name += '_';
-          field = newField;
-        }
-        NameTable.rename(field, name, true);
-      }
-    }
   }
 
   private void addFields(ITypeBinding type, boolean includePrivate, boolean includeSuperclasses,
@@ -1156,6 +967,104 @@ public class Rewriter extends ErrorReportingASTVisitor {
     ITypeBinding superclass = type.getSuperclass();
     if (includeSuperclasses && superclass != null) {
       addFields(superclass, false, true, fields);
+    }
+  }
+
+  @Override
+  public void endVisit(SingleVariableDeclaration node) {
+    if (node.getExtraDimensions() > 0) {
+      node.setType(ASTFactory.newType(node.getAST(), Types.getTypeBinding(node)));
+      node.setExtraDimensions(0);
+    }
+  }
+
+  @Override
+  public void endVisit(VariableDeclarationStatement node) {
+    AST ast = node.getAST();
+    LinkedListMultimap<Integer, VariableDeclarationFragment> newDeclarations =
+        rewriteExtraDimensions(ast, node.getType(), ASTUtil.getFragments(node));
+    if (newDeclarations != null) {
+      List<Statement> statements = ASTUtil.getStatements((Block) node.getParent());
+      int location = 0;
+      while (location < statements.size() && !node.equals(statements.get(location))) {
+        location++;
+      }
+      for (Integer dimensions : newDeclarations.keySet()) {
+        List<VariableDeclarationFragment> fragments = newDeclarations.get(dimensions);
+        VariableDeclarationStatement newDecl =
+            ASTFactory.newVariableDeclarationStatement(ast, fragments.get(0));
+        ASTUtil.getFragments(newDecl).addAll(fragments.subList(1, fragments.size()));
+        statements.add(++location, newDecl);
+      }
+    }
+  }
+
+  @Override
+  public void endVisit(FieldDeclaration node) {
+    AST ast = node.getAST();
+    LinkedListMultimap<Integer, VariableDeclarationFragment> newDeclarations =
+        rewriteExtraDimensions(ast, node.getType(), ASTUtil.getFragments(node));
+    if (newDeclarations != null) {
+      List<BodyDeclaration> bodyDecls = ASTUtil.getBodyDeclarations(node.getParent());
+      int location = 0;
+      while (location < bodyDecls.size() && !node.equals(bodyDecls.get(location))) {
+        location++;
+      }
+      for (Integer dimensions : newDeclarations.keySet()) {
+        List<VariableDeclarationFragment> fragments = newDeclarations.get(dimensions);
+        FieldDeclaration newDecl = ASTFactory.newFieldDeclaration(ast, fragments.get(0));
+        ASTUtil.getFragments(newDecl).addAll(fragments.subList(1, fragments.size()));
+        bodyDecls.add(++location, newDecl);
+      }
+    }
+  }
+
+  private LinkedListMultimap<Integer, VariableDeclarationFragment> rewriteExtraDimensions(
+      AST ast, Type typeNode, List<VariableDeclarationFragment> fragments) {
+    // Removes extra dimensions on variable declaration fragments and creates extra field
+    // declaration nodes if necessary.
+    // eg. "int i1, i2[], i3[][];" becomes "int i1; int[] i2; int[][] i3".
+    LinkedListMultimap<Integer, VariableDeclarationFragment> newDeclarations = null;
+    int masterDimensions = -1;
+    Iterator<VariableDeclarationFragment> iter = fragments.iterator();
+    while (iter.hasNext()) {
+      VariableDeclarationFragment frag = iter.next();
+      int dimensions = frag.getExtraDimensions();
+      ITypeBinding binding = Types.getTypeBinding(frag);
+      if (masterDimensions == -1) {
+        masterDimensions = dimensions;
+        if (dimensions != 0) {
+          ASTUtil.setProperty(typeNode, ASTFactory.newType(ast, binding));
+        }
+      } else if (dimensions != masterDimensions) {
+        if (newDeclarations == null) {
+          newDeclarations = LinkedListMultimap.create();
+        }
+        VariableDeclarationFragment newFrag = ASTFactory.newVariableDeclarationFragment(
+            ast, Types.getVariableBinding(frag),
+            NodeCopier.copySubtree(ast, frag.getInitializer()));
+        newDeclarations.put(dimensions, newFrag);
+        iter.remove();
+      } else {
+        frag.setExtraDimensions(0);
+      }
+    }
+    return newDeclarations;
+  }
+
+  @Override
+  public void endVisit(Assignment node) {
+    AST ast = node.getAST();
+    Assignment.Operator op = node.getOperator();
+    Expression lhs = node.getLeftHandSide();
+    Expression rhs = node.getRightHandSide();
+    ITypeBinding lhsType = Types.getTypeBinding(lhs);
+    if (op == Assignment.Operator.PLUS_ASSIGN && Types.isJavaStringType(lhsType)) {
+      // Change "str1 += str2" to "str1 = str1 + str2".
+      node.setOperator(Assignment.Operator.ASSIGN);
+      node.setRightHandSide(ASTFactory.newInfixExpression(
+          ast, NodeCopier.copySubtree(ast, lhs), InfixExpression.Operator.PLUS,
+          NodeCopier.copySubtree(ast, rhs), lhsType));
     }
   }
 }

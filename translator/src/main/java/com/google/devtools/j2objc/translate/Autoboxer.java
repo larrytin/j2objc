@@ -16,11 +16,14 @@
 
 package com.google.devtools.j2objc.translate;
 
+import com.google.common.collect.Lists;
 import com.google.devtools.j2objc.types.IOSMethodBinding;
 import com.google.devtools.j2objc.types.NodeCopier;
 import com.google.devtools.j2objc.types.Types;
 import com.google.devtools.j2objc.util.ASTUtil;
+import com.google.devtools.j2objc.util.BindingUtil;
 import com.google.devtools.j2objc.util.ErrorReportingASTVisitor;
+import com.google.devtools.j2objc.util.NameTable;
 
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
@@ -37,15 +40,16 @@ import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
-import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.IfStatement;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.PostfixExpression;
 import org.eclipse.jdt.core.dom.PrefixExpression;
 import org.eclipse.jdt.core.dom.ReturnStatement;
-import org.eclipse.jdt.core.dom.SimpleName;
+import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
+import org.eclipse.jdt.core.dom.SuperMethodInvocation;
 import org.eclipse.jdt.core.dom.SwitchStatement;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.WhileStatement;
@@ -72,26 +76,31 @@ public class Autoboxer extends ErrorReportingASTVisitor {
    * translated to "Wrapper.valueOf(expr)".
    */
   private Expression box(Expression expr) {
-    ITypeBinding binding = getBoxType(expr);
-    ITypeBinding wrapperBinding = Types.getWrapperType(binding);
+    ITypeBinding wrapperBinding = Types.getWrapperType(Types.getTypeBinding(expr));
     if (wrapperBinding != null) {
-      MethodInvocation invocation = ast.newMethodInvocation();
-      SimpleName wrapperClass = ast.newSimpleName(wrapperBinding.getName());
-      Types.addBinding(wrapperClass, wrapperBinding);
-      invocation.setExpression(wrapperClass);
-      IMethodBinding wrapperMethod = getWrapperMethod(wrapperBinding, binding);
-      SimpleName methodName = ast.newSimpleName(VALUEOF_METHOD);
-      Types.addBinding(methodName, wrapperMethod);
-      invocation.setName(methodName);
-      Types.addBinding(invocation, wrapperMethod);
-
-      @SuppressWarnings("unchecked")
-      List<Expression> args = invocation.arguments(); // safe by definition
-      args.add(NodeCopier.copySubtree(ast, expr));
-      return invocation;
+      return newBoxExpression(expr, wrapperBinding);
     } else {
       return NodeCopier.copySubtree(ast, expr);
     }
+  }
+
+  private Expression boxWithType(Expression expr, ITypeBinding wrapperType) {
+    if (Types.isBoxedPrimitive(wrapperType)) {
+      return newBoxExpression(expr, wrapperType);
+    }
+    return box(expr);
+  }
+
+  private Expression newBoxExpression(Expression expr, ITypeBinding wrapperType) {
+    ITypeBinding primitiveType = Types.getPrimitiveType(wrapperType);
+    assert primitiveType != null;
+    IMethodBinding wrapperMethod = BindingUtil.findDeclaredMethod(
+        wrapperType, VALUEOF_METHOD, primitiveType.getName());
+    assert wrapperMethod != null : "could not find valueOf method for " + wrapperType;
+    MethodInvocation invocation = ASTFactory.newMethodInvocation(
+        ast, wrapperMethod, ASTFactory.newSimpleName(ast, wrapperType));
+    ASTUtil.getArguments(invocation).add(NodeCopier.copySubtree(ast, expr));
+    return invocation;
   }
 
   /**
@@ -101,16 +110,13 @@ public class Autoboxer extends ErrorReportingASTVisitor {
    * "expr.classValue()".
    */
   private Expression unbox(Expression expr) {
-    ITypeBinding binding = getBoxType(expr);
-    if (Types.getPrimitiveType(binding) != null) {
-      IMethodBinding valueMethod = getValueMethod(binding);
-      MethodInvocation invocation = ast.newMethodInvocation();
-      invocation.setExpression(NodeCopier.copySubtree(ast, expr));
-      SimpleName methodName = ast.newSimpleName(valueMethod.getName());
-      Types.addBinding(methodName, valueMethod);
-      invocation.setName(methodName);
-      Types.addBinding(invocation, valueMethod);
-      return invocation;
+    ITypeBinding binding = Types.getTypeBinding(expr);
+    ITypeBinding primitiveType = Types.getPrimitiveType(binding);
+    if (primitiveType != null) {
+      IMethodBinding valueMethod = BindingUtil.findDeclaredMethod(
+          binding, primitiveType.getName() + VALUE_METHOD);
+      assert valueMethod != null : "could not find value method for " + binding;
+      return ASTFactory.newMethodInvocation(ast, valueMethod, NodeCopier.copySubtree(ast, expr));
     } else {
       return NodeCopier.copySubtree(ast, expr);
     }
@@ -119,9 +125,9 @@ public class Autoboxer extends ErrorReportingASTVisitor {
   @Override
   public void endVisit(Assignment node) {
     Expression lhs = node.getLeftHandSide();
-    ITypeBinding lhType = getBoxType(lhs);
+    ITypeBinding lhType = Types.getTypeBinding(lhs);
     Expression rhs = node.getRightHandSide();
-    ITypeBinding rhType = getBoxType(rhs);
+    ITypeBinding rhType = Types.getTypeBinding(rhs);
     Assignment.Operator op = node.getOperator();
     if (op != Assignment.Operator.ASSIGN && !lhType.isPrimitive() &&
         !lhType.equals(node.getAST().resolveWellKnownType("java.lang.String"))) {
@@ -133,7 +139,7 @@ public class Autoboxer extends ErrorReportingASTVisitor {
       if (lhType.isPrimitive() && !rhType.isPrimitive()) {
         node.setRightHandSide(unbox(rhs));
       } else if (!lhType.isPrimitive() && rhType.isPrimitive()) {
-        node.setRightHandSide(box(rhs));
+        node.setRightHandSide(boxWithType(rhs, lhType));
       }
     }
   }
@@ -178,7 +184,7 @@ public class Autoboxer extends ErrorReportingASTVisitor {
   @Override
   public void endVisit(ArrayAccess node) {
     Expression index = node.getIndex();
-    if (!getBoxType(index).isPrimitive()) {
+    if (!Types.getTypeBinding(index).isPrimitive()) {
       node.setIndex(unbox(index));
     }
   }
@@ -186,8 +192,7 @@ public class Autoboxer extends ErrorReportingASTVisitor {
   @Override
   public void endVisit(ArrayInitializer node) {
     ITypeBinding type = Types.getTypeBinding(node).getElementType();
-    @SuppressWarnings("unchecked")
-    List<Expression> expressions = node.expressions(); // safe by definition
+    List<Expression> expressions = ASTUtil.getExpressions(node);
     for (int i = 0; i < expressions.size(); i++) {
       Expression expr = expressions.get(i);
       Expression result = boxOrUnboxExpression(expr, type);
@@ -205,8 +210,7 @@ public class Autoboxer extends ErrorReportingASTVisitor {
       if (parent instanceof Expression) {
         // Check if this cast is an argument or the invocation's expression.
         if (parent instanceof MethodInvocation) {
-          @SuppressWarnings("unchecked")
-          List<Expression> args = ((MethodInvocation) parent).arguments();
+          List<Expression> args = ASTUtil.getArguments((MethodInvocation) parent);
           for (int i = 0; i < args.size(); i++) {
             if (node.equals(args.get(i))) {
               args.set(i, expr);
@@ -221,20 +225,18 @@ public class Autoboxer extends ErrorReportingASTVisitor {
 
   @Override
   public void endVisit(ClassInstanceCreation node) {
-    @SuppressWarnings("unchecked")
-    List<Expression> args = node.arguments(); // safe by definition
-    convertArguments(Types.getMethodBinding(node), args);
+    convertArguments(Types.getMethodBinding(node), ASTUtil.getArguments(node));
   }
 
   @Override
   public void endVisit(ConditionalExpression node) {
-    ITypeBinding nodeType = getBoxType(node);
+    ITypeBinding nodeType = Types.getTypeBinding(node);
 
     Expression thenExpr = node.getThenExpression();
-    ITypeBinding thenType = getBoxType(thenExpr);
+    ITypeBinding thenType = Types.getTypeBinding(thenExpr);
 
     Expression elseExpr = node.getElseExpression();
-    ITypeBinding elseType = getBoxType(elseExpr);
+    ITypeBinding elseType = Types.getTypeBinding(elseExpr);
 
     if (thenType.isPrimitive() && !nodeType.isPrimitive()) {
       node.setThenExpression(box(thenExpr));
@@ -251,15 +253,13 @@ public class Autoboxer extends ErrorReportingASTVisitor {
 
   @Override
   public void endVisit(ConstructorInvocation node) {
-    @SuppressWarnings("unchecked")
-    List<Expression> args = node.arguments(); // safe by definition
-    convertArguments(Types.getMethodBinding(node), args);
+    convertArguments(Types.getMethodBinding(node), ASTUtil.getArguments(node));
   }
 
   @Override
   public void endVisit(DoStatement node) {
     Expression expression = node.getExpression();
-    ITypeBinding exprType = getBoxType(expression);
+    ITypeBinding exprType = Types.getTypeBinding(expression);
     if (!exprType.isPrimitive()) {
       node.setExpression(unbox(expression));
     }
@@ -267,29 +267,13 @@ public class Autoboxer extends ErrorReportingASTVisitor {
 
   @Override
   public void endVisit(EnumConstantDeclaration node) {
-    @SuppressWarnings("unchecked")
-    List<Expression> args = node.arguments(); // safe by definition
-    if (!args.isEmpty()) {
-      IMethodBinding constructor = Types.getMethodBinding(node);
-      int n = args.size();
-      for (int i = 0; i < n; i++) {
-        Expression arg = args.get(i);
-        ITypeBinding parameterType = constructor.getParameterTypes()[i];
-        boolean argumentIsPrimitive = getBoxType(arg).isPrimitive();
-        boolean parameterIsPrimitive = parameterType.isPrimitive();
-        if (argumentIsPrimitive && !parameterIsPrimitive) {
-          args.set(i, box(arg));
-        } else if (parameterIsPrimitive && !argumentIsPrimitive) {
-          args.set(i, unbox(arg));
-        }
-      }
-    }
+    convertArguments(Types.getMethodBinding(node), ASTUtil.getArguments(node));
   }
 
   @Override
   public void endVisit(IfStatement node) {
     Expression expr = node.getExpression();
-    ITypeBinding binding = getBoxType(expr);
+    ITypeBinding binding = Types.getTypeBinding(expr);
 
     if (!binding.isPrimitive()) {
       node.setExpression(unbox(expr));
@@ -300,9 +284,9 @@ public class Autoboxer extends ErrorReportingASTVisitor {
   public void endVisit(InfixExpression node) {
     ITypeBinding type = Types.getTypeBinding(node);
     Expression lhs = node.getLeftOperand();
-    ITypeBinding lhBinding = getBoxType(lhs);
+    ITypeBinding lhBinding = Types.getTypeBinding(lhs);
     Expression rhs = node.getRightOperand();
-    ITypeBinding rhBinding = getBoxType(rhs);
+    ITypeBinding rhBinding = Types.getTypeBinding(rhs);
     InfixExpression.Operator op = node.getOperator();
 
     // Don't unbox for equality tests where both operands are boxed types.
@@ -321,11 +305,10 @@ public class Autoboxer extends ErrorReportingASTVisitor {
     if (!rhBinding.isPrimitive()) {
       node.setRightOperand(unbox(rhs));
     }
-    @SuppressWarnings("unchecked")
-    List<Expression> extendedOperands = node.extendedOperands(); // safe by definition
+    List<Expression> extendedOperands = ASTUtil.getExtendedOperands(node);
     for (int i = 0; i < extendedOperands.size(); i++) {
       Expression expr = extendedOperands.get(i);
-      if (!getBoxType(expr).isPrimitive()) {
+      if (!Types.getTypeBinding(expr).isPrimitive()) {
         extendedOperands.set(i, unbox(expr));
       }
     }
@@ -333,17 +316,45 @@ public class Autoboxer extends ErrorReportingASTVisitor {
 
   @Override
   public void endVisit(MethodInvocation node) {
-    @SuppressWarnings("unchecked")
-    List<Expression> args = node.arguments(); // safe by definition
-    convertArguments(Types.getMethodBinding(node), args);
+    convertArguments(Types.getMethodBinding(node), ASTUtil.getArguments(node));
   }
 
   @Override
   public void endVisit(PrefixExpression node) {
+    PrefixExpression.Operator op = node.getOperator();
     Expression operand = node.getOperand();
-    if (!getBoxType(operand).isPrimitive()) {
+    if (op == PrefixExpression.Operator.INCREMENT) {
+      rewriteBoxedPrefixOrPostfix(node, operand, "PreIncr");
+    } else if (op == PrefixExpression.Operator.DECREMENT) {
+      rewriteBoxedPrefixOrPostfix(node, operand, "PreDecr");
+    } else if (!Types.getTypeBinding(operand).isPrimitive()) {
       node.setOperand(unbox(operand));
     }
+  }
+
+  @Override
+  public void endVisit(PostfixExpression node) {
+    PostfixExpression.Operator op = node.getOperator();
+    if (op == PostfixExpression.Operator.INCREMENT) {
+      rewriteBoxedPrefixOrPostfix(node, node.getOperand(), "PostIncr");
+    } else if (op == PostfixExpression.Operator.DECREMENT) {
+      rewriteBoxedPrefixOrPostfix(node, node.getOperand(), "PostDecr");
+    }
+  }
+
+  private void rewriteBoxedPrefixOrPostfix(
+      ASTNode node, Expression operand, String methodPrefix) {
+    ITypeBinding type = Types.getTypeBinding(operand);
+    if (!Types.isBoxedPrimitive(type)) {
+      return;
+    }
+    AST ast = node.getAST();
+    String methodName = methodPrefix + NameTable.capitalize(Types.getPrimitiveType(type).getName());
+    IOSMethodBinding methodBinding = IOSMethodBinding.newFunction(methodName, type, type, type);
+    MethodInvocation invocation = ASTFactory.newMethodInvocation(ast, methodBinding, null);
+    ASTUtil.getArguments(invocation).add(
+        ASTFactory.newAddressOf(ast, NodeCopier.copySubtree(ast, operand)));
+    ASTUtil.setProperty(node, invocation);
   }
 
   @Override
@@ -355,7 +366,7 @@ public class Autoboxer extends ErrorReportingASTVisitor {
         n = n.getParent();
       }
       ITypeBinding returnType = Types.getMethodBinding(n).getReturnType();
-      ITypeBinding exprType = getBoxType(expr);
+      ITypeBinding exprType = Types.getTypeBinding(expr);
       if (returnType.isPrimitive() && !exprType.isPrimitive()) {
         node.setExpression(unbox(expr));
       }
@@ -367,21 +378,24 @@ public class Autoboxer extends ErrorReportingASTVisitor {
 
   @Override
   public void endVisit(SuperConstructorInvocation node) {
-    @SuppressWarnings("unchecked")
-    List<Expression> args = node.arguments(); // safe by definition
-    convertArguments(Types.getMethodBinding(node), args);
+    convertArguments(Types.getMethodBinding(node), ASTUtil.getArguments(node));
+  }
+
+  @Override
+  public void endVisit(SuperMethodInvocation node) {
+    convertArguments(Types.getMethodBinding(node), ASTUtil.getArguments(node));
   }
 
   @Override
   public void endVisit(VariableDeclarationFragment node) {
     Expression initializer = node.getInitializer();
     if (initializer != null) {
-      ITypeBinding nodeType = getBoxType(node);
-      ITypeBinding initType = getBoxType(initializer);
+      ITypeBinding nodeType = Types.getTypeBinding(node);
+      ITypeBinding initType = Types.getTypeBinding(initializer);
       if (nodeType.isPrimitive() && !initType.isPrimitive()) {
         node.setInitializer(unbox(initializer));
       } else if (!nodeType.isPrimitive() && initType.isPrimitive()) {
-        node.setInitializer(box(initializer));
+        node.setInitializer(boxWithType(initializer, nodeType));
       }
     }
   }
@@ -389,7 +403,7 @@ public class Autoboxer extends ErrorReportingASTVisitor {
   @Override
   public void endVisit(WhileStatement node) {
     Expression expression = node.getExpression();
-    ITypeBinding exprType = getBoxType(expression);
+    ITypeBinding exprType = Types.getTypeBinding(expression);
     if (!exprType.isPrimitive()) {
       node.setExpression(unbox(expression));
     }
@@ -398,50 +412,10 @@ public class Autoboxer extends ErrorReportingASTVisitor {
   @Override
   public void endVisit(SwitchStatement node) {
     Expression expression = node.getExpression();
-    ITypeBinding exprType = getBoxType(expression);
+    ITypeBinding exprType = Types.getTypeBinding(expression);
     if (!exprType.isPrimitive()) {
       node.setExpression(unbox(expression));
     }
-  }
-
-  /**
-   * Return the type to be checked for boxing or unboxing.
-   */
-  private ITypeBinding getBoxType(ASTNode node) {
-    IBinding binding = Types.getBinding(node);
-    if (binding instanceof ITypeBinding) {
-      return (ITypeBinding) binding;
-    }
-    if (binding instanceof IVariableBinding) {
-      return ((IVariableBinding) binding).getType();
-    }
-    if (binding instanceof IMethodBinding) {
-      IMethodBinding method = (IMethodBinding) binding;
-      return method.isConstructor() ? method.getDeclaringClass() : method.getReturnType();
-    }
-    throw new AssertionError("unknown box type");
-  }
-
-  private IMethodBinding getWrapperMethod(ITypeBinding wrapperClass, ITypeBinding primitiveType) {
-    for (IMethodBinding method : wrapperClass.getDeclaredMethods()) {
-      if (method.getName().equals(VALUEOF_METHOD)
-          && method.getParameterTypes()[0].isEqualTo(primitiveType)) {
-        return method;
-      }
-    }
-    throw new AssertionError("could not find valueOf method for " + wrapperClass);
-  }
-
-  private IMethodBinding getValueMethod(ITypeBinding type) {
-    ITypeBinding primitiveType = Types.getPrimitiveType(type);
-    assert primitiveType != null;
-    String methodName = primitiveType.getName() + VALUE_METHOD;
-    for (IMethodBinding method : type.getDeclaredMethods()) {
-      if (method.getName().equals(methodName)) {
-        return method;
-      }
-    }
-    throw new AssertionError("could not find value method for " + type);
   }
 
   private void convertArguments(IMethodBinding methodBinding, List<Expression> args) {
@@ -451,41 +425,64 @@ public class Autoboxer extends ErrorReportingASTVisitor {
     if (Types.isJavaStringType(methodBinding.getDeclaringClass()) &&
         methodBinding.getName().equals("format")) {
       // The String.format methods are mapped directly to NSString methods,
-      // and are already converted by Rewriter.
+      // but arguments referred to as objects by the format string need to
+      // be boxed.
+      if (!args.isEmpty()) {
+        Expression first = args.get(0);
+        int firstArg = 1;
+        ITypeBinding typeBinding = Types.getTypeBinding(first);
+        if (typeBinding.getQualifiedName().equals("java.util.Locale")) {
+          first = args.get(1);
+          firstArg = 2;
+          typeBinding = Types.getTypeBinding(first);
+        }
+        if (first instanceof StringLiteral) {
+          List<Boolean> formatSpecifiers =
+              getFormatSpecifiers(((StringLiteral) first).getLiteralValue());
+          for (int i = 0; i < formatSpecifiers.size(); i++) {
+            if (formatSpecifiers.get(i)) {
+              int iArg = i + firstArg;
+              Expression arg = args.get(iArg);
+              if (Types.getTypeBinding(arg).isPrimitive()) {
+                args.set(iArg, box(arg));
+              }
+            }
+          }
+        }
+      }
       return;
     }
 
-    ITypeBinding[] argTypes = methodBinding.getParameterTypes();
-    if (methodBinding.isVarargs()) {
-      ITypeBinding[] paramTypes = methodBinding.getParameterTypes();
-      int explicitArgs = paramTypes.length - 1;  // the last arg is the varargs array
-
-      for (int i = 0; i < args.size(); i++) {
-        Expression arg = args.get(i);
-        if (i < explicitArgs) {
-          // Only box/unbox explicit args if necessary.
-          Expression replacementArg = boxOrUnboxExpression(arg, argTypes[i]);
-          if (replacementArg != arg) {
-            args.set(i, replacementArg);
-          }
-        } else {
-          // Box varargs since they are passed as an object array, unless a format
-          // specifier needs a primitive.
-          ITypeBinding argBinding = getBoxType(arg);
-          if (argBinding.isPrimitive()) {
-            args.set(i, box(arg));
-          }
-        }
+    ITypeBinding[] paramTypes = methodBinding.getParameterTypes();
+    for (int i = 0; i < args.size(); i++) {
+      ITypeBinding paramType;
+      if (methodBinding.isVarargs() && i >= paramTypes.length - 1) {
+        paramType = paramTypes[paramTypes.length - 1].getComponentType();
+      } else {
+        paramType = paramTypes[i];
       }
-    } else {
-      for (int i = 0; i < argTypes.length; i++) {
-        Expression arg = args.get(i);
-        Expression replacementArg = boxOrUnboxExpression(arg, argTypes[i]);
-        if (replacementArg != arg) {
-          args.set(i, replacementArg);
-        }
+      Expression arg = args.get(i);
+      Expression replacementArg = boxOrUnboxExpression(arg, paramType);
+      if (replacementArg != arg) {
+        args.set(i, replacementArg);
       }
     }
+  }
+
+  // Returns a list of booleans indicating whether the format specifier
+  // refers to an object argument or not.
+  private List<Boolean> getFormatSpecifiers(String format) {
+    List<Boolean> specifiers = Lists.newArrayList();
+    int i = 0;
+    while ((i = format.indexOf('%', i)) != -1) {
+      if (format.charAt(++i) == '%') {
+        // Skip %% sequences, since they don't have associated args.
+        ++i;
+        continue;
+      }
+      specifiers.add(format.charAt(i) == '@');
+    }
+    return specifiers;
   }
 
   private Expression boxOrUnboxExpression(Expression arg, ITypeBinding argType) {
@@ -494,7 +491,7 @@ public class Autoboxer extends ErrorReportingASTVisitor {
     if (binding instanceof IMethodBinding) {
       argBinding = ((IMethodBinding) binding).getReturnType();
     } else {
-      argBinding = getBoxType(arg);
+      argBinding = Types.getTypeBinding(arg);
     }
     if (argType.isPrimitive() && !argBinding.isPrimitive()) {
       return unbox(arg);

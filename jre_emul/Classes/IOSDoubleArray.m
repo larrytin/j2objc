@@ -20,6 +20,7 @@
 //
 
 #import "IOSDoubleArray.h"
+#import "IOSArrayClass.h"
 #import "IOSPrimitiveClass.h"
 #import "java/lang/Double.h"
 
@@ -50,48 +51,53 @@
 }
 
 - (double)doubleAtIndex:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return buffer_[index];
 }
 
+- (double *)doubleRefAtIndex:(NSUInteger)index {
+  IOSArray_checkIndex(size_, index);
+  return &buffer_[index];
+}
+
 - (double)replaceDoubleAtIndex:(NSUInteger)index withDouble:(double)value {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   buffer_[index] = value;
   return value;
 }
 
 - (void)getDoubles:(double *)buffer length:(NSUInteger)length {
-  IOSArray_checkIndex(self, length - 1);
+  IOSArray_checkIndex(size_, length - 1);
   memcpy(buffer, buffer_, length * sizeof(double));
 }
 
 - (void) arraycopy:(NSRange)sourceRange
        destination:(IOSArray *)destination
             offset:(NSInteger)offset {
-  IOSArray_checkRange(self, sourceRange);
-  IOSArray_checkRange(destination, NSMakeRange(offset, sourceRange.length));
+  IOSArray_checkRange(size_, sourceRange);
+  IOSArray_checkRange(destination->size_, NSMakeRange(offset, sourceRange.length));
   memmove(((IOSDoubleArray *) destination)->buffer_ + offset,
           self->buffer_ + sourceRange.location,
           sourceRange.length * sizeof(double));
 }
 
 - (double)incr:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return ++buffer_[index];
 }
 
 - (double)decr:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return --buffer_[index];
 }
 
 - (double)postIncr:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return buffer_[index]++;
 }
 
 - (double)postDecr:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return buffer_[index]--;
 }
 
@@ -100,11 +106,11 @@
 }
 
 - (IOSClass *)elementType {
-  id type = [[IOSPrimitiveClass alloc] initWithName:@"double" type:@"D"];
-#if ! __has_feature(objc_arc)
-  [type autorelease];
-#endif
-  return type;
+  return [IOSClass doubleClass];
+}
+
++ (IOSClass *)iosClass {
+  return [IOSClass arrayClassWithComponentType:[IOSClass doubleClass]];
 }
 
 - (id)copyWithZone:(NSZone *)zone {

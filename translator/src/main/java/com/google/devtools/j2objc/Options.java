@@ -46,8 +46,8 @@ import java.util.logging.Logger;
 public class Options {
 
   private static Map<String, String> compilerOptions;
-  private static List<String> sourcePathEntries = Lists.newArrayList( "." );
-  private static List<String> classPathEntries = Lists.newArrayList( "." );
+  private static List<String> sourcePathEntries = Lists.newArrayList(".");
+  private static List<String> classPathEntries = Lists.newArrayList(".");
   private static List<String> pluginPathEntries = Lists.newArrayList();
   private static String pluginOptionString = "";
   private static List<Plugin> plugins = new ArrayList<Plugin>();
@@ -60,18 +60,18 @@ public class Options {
   private static boolean emitLineDirectives = false;
   private static boolean warningsAsErrors = false;
   private static boolean deprecatedDeclarations = false;
-  private static boolean inlineFieldAccess = true;
   private static Map<String, String> methodMappings = Maps.newLinkedHashMap();
-  private static boolean generateTestMain = true;
   private static boolean memoryDebug = false;
   private static boolean generateNativeStubs = false;
+  private static boolean stripGwtIncompatible = false;
+  private static boolean segmentedHeaders = false;
+  private static String fileEncoding = System.getProperty("file.encoding", "ISO-8859-1");
+  private static boolean jsniWarnings = true;
+  private static boolean buildClosure = false;
+  private static boolean stripReflection = false;
 
   private static DeadCodeMap deadCodeMap = null;
   private static File proGuardUsageFile = null;
-
-  // TODO(user): next step will make this false, then later remove it
-  // when all internal source uses OCNI.
-  private static boolean acceptJsniDelimiters = true;
 
   private static final String JRE_MAPPINGS_FILE = "JRE.mappings";
   private static final List<String> mappingFiles = Lists.newArrayList(JRE_MAPPINGS_FILE);
@@ -120,9 +120,9 @@ public class Options {
    */
   public static String[] load(String[] args) throws IOException {
     compilerOptions = Maps.newHashMap();
-    compilerOptions.put(org.eclipse.jdt.core.JavaCore.COMPILER_SOURCE, "1.6");
-    compilerOptions.put(org.eclipse.jdt.core.JavaCore.COMPILER_CODEGEN_TARGET_PLATFORM, "1.6");
-    compilerOptions.put(org.eclipse.jdt.core.JavaCore.COMPILER_COMPLIANCE, "1.6");
+    compilerOptions.put(org.eclipse.jdt.core.JavaCore.COMPILER_SOURCE, "1.7");
+    compilerOptions.put(org.eclipse.jdt.core.JavaCore.COMPILER_CODEGEN_TARGET_PLATFORM, "1.7");
+    compilerOptions.put(org.eclipse.jdt.core.JavaCore.COMPILER_COMPLIANCE, "1.7");
     logger.setLevel(Level.INFO);
 
     // Create a temporary directory as the sourcepath's first entry, so that
@@ -133,6 +133,10 @@ public class Options {
     String[] noFiles = new String[0];
     while (nArg < args.length) {
       String arg = args[nArg];
+      if (arg.isEmpty()) {
+        ++nArg;
+        continue;
+      }
       if (arg.equals("-classpath")) {
         if (++nArg == args.length) {
           return noFiles;
@@ -196,14 +200,6 @@ public class Options {
         ignoreMissingImports = true;
       } else if (arg.equals("-use-reference-counting")) {
         checkMemoryManagementOption(MemoryManagementOption.REFERENCE_COUNTING);
-      } else if (arg.equals("--inline-field-access")) {
-        inlineFieldAccess = true;
-      } else if (arg.equals("--no-inline-field-access")) {
-        inlineFieldAccess = false;
-      } else if (arg.equals("--generate-test-main")) {
-        generateTestMain = true;
-      } else if (arg.equals("--no-generate-test-main")) {
-        generateTestMain = false;
       } else if (arg.equals("--no-package-directories")) {
         usePackageDirectories = false;
       } else if (arg.equals("-use-gc")) {
@@ -225,11 +221,28 @@ public class Options {
       } else if (arg.startsWith(XBOOTCLASSPATH)) {
         bootclasspath = arg.substring(XBOOTCLASSPATH.length());
       } else if (arg.equals("-Xno-jsni-delimiters")) {
-        acceptJsniDelimiters = false;
+        // TODO(user): remove flag when all client builds stop using it.
       } else if (arg.equals("--mem-debug")) {
         memoryDebug = true;
       } else if (arg.equals("--generate-native-stubs")) {
         generateNativeStubs = true;
+      } else if (arg.equals("-Xno-jsni-warnings")) {
+        jsniWarnings = false;
+      } else if (arg.equals("-encoding")) {
+        if (++nArg == args.length) {
+          usage("-encoding requires an argument");
+        }
+        fileEncoding = args[nArg];
+      } else if (arg.equals("--strip-gwt-incompatible")) {
+        stripGwtIncompatible = true;
+      } else if (arg.equals("--strip-reflection")) {
+        stripReflection = true;
+      } else if (arg.equals("--generate-test-main") || arg.equals("--no-generate-test-main")) {
+        // obsolete
+      } else if (arg.equals("--segmented-headers")) {
+        segmentedHeaders = true;
+      } else if (arg.equals("--build-closure")) {
+        buildClosure = true;
       } else if (arg.startsWith("-h") || arg.equals("--help")) {
         help(false);
       } else if (arg.startsWith("-")) {
@@ -367,16 +380,6 @@ public class Options {
     return outputDirectory;
   }
 
-  /* TODO(user): remove when all internal source uses OCNI delimiters. */
-  public static boolean acceptJsniDelimiters() {
-    return acceptJsniDelimiters;
-  }
-
-  /* TODO(user): remove when all internal source uses OCNI delimiters. */
-  public static void setAcceptJsniDelimiters(boolean value) {
-    acceptJsniDelimiters = value;
-  }
-
   public static boolean memoryDebug() {
     return memoryDebug;
   }
@@ -411,10 +414,6 @@ public class Options {
 
   public static boolean ignoreMissingImports() {
     return ignoreMissingImports;
-  }
-
-  public static boolean inlineFieldAccess() {
-    return inlineFieldAccess;
   }
 
   public static boolean useReferenceCounting() {
@@ -488,10 +487,6 @@ public class Options {
     return fileHeader;
   }
 
-  public static boolean generateTestMain() {
-    return generateTestMain;
-  }
-
   public static File getProGuardUsageFile() {
     return proGuardUsageFile;
   }
@@ -557,5 +552,61 @@ public class Options {
       }
     }
     dir.delete();  // Will fail if other files in dir, which is fine.
+  }
+
+  public static String fileEncoding() {
+    return fileEncoding;
+  }
+
+  /**
+   * Returns an array that has the same number of elements as the source path
+   * entries, containing the file encoding.
+   */
+  public static String[] getFileEncodings() {
+    int n = sourcePathEntries.size();
+    String[] result = new String[n];
+    for (int i = 0; i < n; i++) {
+      result[i] = fileEncoding;
+    }
+    return result;
+  }
+
+  public static boolean stripGwtIncompatibleMethods() {
+    return stripGwtIncompatible;
+  }
+
+  @VisibleForTesting
+  public static void setStripGwtIncompatibleMethods(boolean b) {
+    stripGwtIncompatible = b;
+  }
+
+  public static boolean generateSegmentedHeaders() {
+    return segmentedHeaders;
+  }
+
+  @VisibleForTesting
+  public static void enableSegmentedHeaders() {
+    segmentedHeaders = true;
+  }
+
+  @VisibleForTesting
+  public static void resetSegmentedHeaders() {
+    segmentedHeaders = false;
+  }
+
+  public static boolean jsniWarnings() {
+    return jsniWarnings;
+  }
+
+  public static void setJsniWarnings(boolean b) {
+    jsniWarnings = b;
+  }
+
+  public static boolean buildClosure() {
+    return buildClosure;
+  }
+
+  public static boolean stripReflection() {
+    return stripReflection;
   }
 }

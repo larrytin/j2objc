@@ -16,18 +16,17 @@
 
 package com.google.devtools.j2objc.gen;
 
-import com.google.common.collect.HashMultimap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.devtools.j2objc.J2ObjC;
 import com.google.devtools.j2objc.Options;
 import com.google.devtools.j2objc.types.HeaderImportCollector;
 import com.google.devtools.j2objc.types.IOSMethod;
-import com.google.devtools.j2objc.types.ImportCollector;
+import com.google.devtools.j2objc.types.Import;
 import com.google.devtools.j2objc.types.Types;
-import com.google.devtools.j2objc.util.ErrorReportingASTVisitor;
+import com.google.devtools.j2objc.util.ASTUtil;
+import com.google.devtools.j2objc.util.BindingUtil;
 import com.google.devtools.j2objc.util.NameTable;
 import com.google.devtools.j2objc.util.UnicodeUtils;
 
@@ -35,6 +34,8 @@ import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.Annotation;
 import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
+import org.eclipse.jdt.core.dom.AnnotationTypeMemberDeclaration;
+import org.eclipse.jdt.core.dom.BodyDeclaration;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.EnumConstantDeclaration;
 import org.eclipse.jdt.core.dom.EnumDeclaration;
@@ -46,16 +47,12 @@ import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.Name;
-import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
-import java.util.ArrayList;
 import java.util.Iterator;
-import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -67,6 +64,8 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
 
   private static final String DEPRECATED_ATTRIBUTE = "__attribute__((deprecated))";
 
+  protected final String mainTypeName;
+
   /**
    * Generate an Objective-C header file for each type declared in a specified
    * compilation unit.
@@ -77,8 +76,9 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
     headerGenerator.generate(unit);
   }
 
-  private ObjectiveCHeaderGenerator(String fileName, String source, CompilationUnit unit) {
+  protected ObjectiveCHeaderGenerator(String fileName, String source, CompilationUnit unit) {
     super(fileName, source, unit, false);
+    mainTypeName = NameTable.getMainTypeName(unit, fileName);
   }
 
   @Override
@@ -89,22 +89,30 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
   public void generate(CompilationUnit unit) {
     println(J2ObjC.getFileHeader(getSourceFileName()));
 
-    @SuppressWarnings("unchecked")
-    List<AbstractTypeDeclaration> types = unit.types(); // safe by definition
-    Set<ITypeBinding> moreForwardTypes = sortTypes(types);
-    printImportsAndForwardReferences(unit, moreForwardTypes);
+    generateFileHeader();
 
-    for (AbstractTypeDeclaration type : types) {
+    for (AbstractTypeDeclaration type : ASTUtil.getTypes(unit)) {
       newline();
       generate(type);
     }
+
+    generateFileFooter();
     save(unit);
+  }
+
+  private String getSuperTypeName(TypeDeclaration node) {
+    Type superType = node.getSuperclassType();
+    if (superType == null) {
+      return "NSObject";
+    }
+    return NameTable.getFullName(Types.getTypeBinding(superType));
   }
 
   @Override
   public void generate(TypeDeclaration node) {
-    String typeName = NameTable.getFullName(node);
-    String superName = NameTable.getSuperClassName(node);
+    ITypeBinding binding = Types.getTypeBinding(node);
+    String typeName = NameTable.getFullName(binding);
+    String superName = getSuperTypeName(node);
     List<FieldDeclaration> fields = Lists.newArrayList(node.getFields());
     List<MethodDeclaration> methods = Lists.newArrayList(node.getMethods());
     boolean isInterface = node.isInterface();
@@ -112,9 +120,7 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
     printConstantDefines(node);
 
     if (Options.generateDeprecatedDeclarations()) {
-      @SuppressWarnings("unchecked")
-      List<IExtendedModifier> modifiers = node.modifiers();
-      if (hasDeprecated(modifiers)) {
+      if (hasDeprecated(ASTUtil.getModifiers(node))) {
         println(DEPRECATED_ATTRIBUTE);
       }
     }
@@ -124,19 +130,18 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
     } else {
       printf("@interface %s : %s", typeName, superName);
     }
-    @SuppressWarnings("unchecked")
-    List<Type> interfaces = node.superInterfaceTypes(); // safe by definition
+    List<Type> interfaces = ASTUtil.getSuperInterfaceTypes(node);
     if (!interfaces.isEmpty()) {
       print(" < ");
       for (Iterator<Type> iterator = interfaces.iterator(); iterator.hasNext();) {
-        print(NameTable.javaTypeToObjC(iterator.next(), true));
+        print(NameTable.getFullName(Types.getTypeBinding(iterator.next())));
         if (iterator.hasNext()) {
           print(", ");
         }
       }
-      print(isInterface ? ", NSObject >" : " >");
+      print(isInterface ? ", NSObject, JavaObject >" : " >");
     } else if (isInterface) {
-      print(" < NSObject >");
+      print(" < NSObject, JavaObject >");
     }
     if (isInterface) {
       newline();
@@ -144,17 +149,20 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
       println(" {");
       printInstanceVariables(fields);
       println("}\n");
-      printProperties(fields);
       printStaticFieldAccessors(fields, methods, isInterface);
     }
     printMethods(methods);
     println("@end");
+    if (!isInterface) {
+      printFieldSetters(binding, fields);
+    }
 
     if (isInterface) {
       printStaticInterface(typeName, fields, methods);
     }
 
-    ITypeBinding binding = Types.getTypeBinding(node);
+    printIncrementAndDecrementFunctions(binding);
+
     String pkg = binding.getPackage().getName();
     if (NameTable.hasPrefix(pkg) && binding.isTopLevel()) {
       String unprefixedName = NameTable.camelCaseQualifiedName(binding.getQualifiedName());
@@ -168,10 +176,53 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
     printExternalNativeMethodCategory(node, typeName);
   }
 
+  private static final Set<String> NEEDS_INC_AND_DEC = ImmutableSet.of(
+      "int", "long", "double", "float", "short", "byte", "char");
+
+  private void printIncrementAndDecrementFunctions(ITypeBinding type) {
+    ITypeBinding primitiveType = Types.getPrimitiveType(type);
+    if (primitiveType == null || !NEEDS_INC_AND_DEC.contains(primitiveType.getName())) {
+      return;
+    }
+    String primitiveName = primitiveType.getName();
+    newline();
+    printf("BOXED_INC_AND_DEC(%s, %s, %s, %s)\n", NameTable.capitalize(primitiveName),
+        primitiveName, NameTable.getFullName(type),
+        NameTable.capitalize(NameTable.getPrimitiveTypeParameterKeyword(primitiveName)));
+  }
+
   @Override
   protected void generate(AnnotationTypeDeclaration node) {
     String typeName = NameTable.getFullName(node);
-    printf("@protocol %s < NSObject >\n@end\n", typeName);
+    List<AnnotationTypeMemberDeclaration> members = Lists.newArrayList();
+    for (BodyDeclaration decl : ASTUtil.getBodyDeclarations(node)) {
+      if (decl instanceof AnnotationTypeMemberDeclaration) {
+        members.add((AnnotationTypeMemberDeclaration) decl);
+      }
+    }
+
+    // Print annotation as protocol.
+    printf("@protocol %s < JavaLangAnnotationAnnotation >\n", typeName);
+    if (!members.isEmpty()) {
+      newline();
+      printAnnotationProperties(members);
+    }
+    println("@end\n");
+
+    if (BindingUtil.isRuntimeAnnotation(Types.getTypeBinding(node))) {
+      // Print annotation implementation interface.
+      printf("@interface %sImpl : NSObject < %s >", typeName, typeName);
+      if (members.isEmpty()) {
+        newline();
+      } else {
+        println(" {\n @private");
+        printAnnotationVariables(members);
+        println("}\n");
+      }
+      printAnnotationConstructor(Types.getTypeBinding(node));
+      printAnnotationAccessors(members);
+      println("@end");
+    }
   }
 
   private void printExternalNativeMethodCategory(TypeDeclaration node, String typeName) {
@@ -211,8 +262,7 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
   protected void generate(EnumDeclaration node) {
     printConstantDefines(node);
     String typeName = NameTable.getFullName(node);
-    @SuppressWarnings("unchecked")
-    List<EnumConstantDeclaration> constants = node.enumConstants();
+    List<EnumConstantDeclaration> constants = ASTUtil.getEnumConstants(node);
 
     // C doesn't allow empty enum declarations.  Java does, so we skip the
     // C enum declaration and generate the type declaration.
@@ -255,7 +305,6 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
     println(" > {");
     printInstanceVariables(fields);
     println("}");
-    printProperties(fields);
     for (EnumConstantDeclaration constant : constants) {
       printf("+ (%s *)%s;\n", typeName, NameTable.getName(constant.getName()));
     }
@@ -265,6 +314,7 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
     printStaticFieldAccessors(fields, methods, /* isInterface */ false);
     printMethods(methods);
     println("@end");
+    printFieldSetters(enumType, fields);
   }
 
   @Override
@@ -288,11 +338,22 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
       return "";
     }
     String result = super.methodDeclaration(m);
+    String methodName = NameTable.getName(Types.getMethodBinding(m));
+    if (methodName.startsWith("new") || methodName.startsWith("copy")
+        || methodName.startsWith("alloc") || methodName.startsWith("init")) {
+         // Getting around a clang warning.
+         // clang assumes that methods with names starting with new, alloc or copy
+         // return objects of the same type as the receiving class, regardless of
+         // the actual declared return type. This attribute tells clang to not do
+         // that, please.
+         // See http://clang.llvm.org/docs/AutomaticReferenceCounting.html
+         // Sections 5.1 (Explicit method family control)
+         // and 5.2.2 (Related result types)
+         result += " OBJC_METHOD_FAMILY_NONE";
+       }
 
     if (Options.generateDeprecatedDeclarations()) {
-      @SuppressWarnings("unchecked")
-      List<IExtendedModifier> modifiers = m.modifiers();
-      if (hasDeprecated(modifiers)) {
+      if (hasDeprecated(ASTUtil.getModifiers(m))) {
         result += " " + DEPRECATED_ATTRIBUTE;
       }
     }
@@ -323,20 +384,10 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
     }
   }
 
-  private void printImportsAndForwardReferences(CompilationUnit unit, Set<ITypeBinding> forwards) {
-    HeaderImportCollector collector = new HeaderImportCollector();
-    collector.collect(unit, getSourceFileName());
-    Set<ImportCollector.Import> imports = collector.getImports();
-    Set<ImportCollector.Import> superTypes = collector.getSuperTypes();
-
-    // Print forward declarations.
+  protected void printForwardDeclarations(Set<Import> forwardDecls) {
     Set<String> forwardStmts = Sets.newTreeSet();
-    for (ImportCollector.Import imp : imports) {
+    for (Import imp : forwardDecls) {
       forwardStmts.add(createForwardDeclaration(imp.getTypeName(), imp.isInterface()));
-    }
-    for (ITypeBinding forward : forwards) {
-      forwardStmts.add(
-          createForwardDeclaration(NameTable.getFullName(forward), forward.isInterface()));
     }
     if (!forwardStmts.isEmpty()) {
       for (String stmt : forwardStmts) {
@@ -344,15 +395,29 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
       }
       newline();
     }
+  }
 
-    // Print collected imports.
+  protected void generateFileHeader() {
+    printf("#ifndef _%s_H_\n", mainTypeName);
+    printf("#define _%s_H_\n", mainTypeName);
+    pushIgnoreDeprecatedDeclarationsPragma();
+    newline();
+
+    HeaderImportCollector collector = new HeaderImportCollector();
+    collector.collect(getUnit());
+
+    printForwardDeclarations(collector.getForwardDeclarations());
+
     println("#import \"JreEmulation.h\"");
+
+    // Print collected includes.
+    Set<Import> superTypes = collector.getSuperTypes();
     if (!superTypes.isEmpty()) {
-      Set<String> importStmts = Sets.newTreeSet();
-      for (ImportCollector.Import imp : superTypes) {
-        importStmts.add(createImport(imp));
+      Set<String> includeStmts = Sets.newTreeSet();
+      for (Import imp : superTypes) {
+        includeStmts.add(String.format("#include \"%s.h\"", imp.getImportFileName()));
       }
-      for (String stmt : importStmts) {
+      for (String stmt : includeStmts) {
         println(stmt);
       }
     }
@@ -362,167 +427,34 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
     return String.format("@%s %s;", isInterface ? "protocol" : "class", typeName);
   }
 
-  protected String createImport(ImportCollector.Import imp) {
-    return String.format("#import \"%s.h\"", imp.getImportFileName());
-  }
-
-  /**
-   * If an inner type is defined before any of its super types are, put the
-   * super types first.  Otherwise, keep the order as is, to make debugging
-   * easier.  For field and method references to a following type, add a
-   * forward type.
-   *
-   * @return the set of forward types to declare.
-   */
-  static Set<ITypeBinding> sortTypes(List<AbstractTypeDeclaration> types) {
-    final List<AbstractTypeDeclaration> typesCopy =
-        new ArrayList<AbstractTypeDeclaration>(types);
-
-    final Map<String, AbstractTypeDeclaration> index = Maps.newHashMap();
-    for (AbstractTypeDeclaration type : typesCopy) {
-      index.put(Types.getTypeBinding(type).getBinaryName(), type);
-    }
-
-    final Multimap<String, String> references = HashMultimap.create();
-    final Multimap<String, String> superTypes = HashMultimap.create();
-
-    // Collect all references to other types, but track super types
-    // separately from other references.
-    for (AbstractTypeDeclaration type : typesCopy) {
-      final String typeName = Types.getTypeBinding(type).getBinaryName();
-
-      ErrorReportingASTVisitor collector = new ErrorReportingASTVisitor() {
-        protected void addSuperType(Type type) {
-          ITypeBinding binding = type == null ? null : Types.getTypeBinding(type);
-          if (binding != null && isMember(binding)) {
-            superTypes.put(typeName, binding.getBinaryName());
-          }
-        }
-
-        private void addReference(Type type) {
-          ITypeBinding binding = type == null ? null : Types.getTypeBinding(type);
-          if (binding != null && isMember(binding)) {
-            references.put(typeName, binding.getBinaryName());
-          }
-        }
-
-        // Only collect references to types members.
-        private boolean isMember(ITypeBinding binding) {
-          return index.containsKey(binding.getBinaryName());
-        }
-
-        @Override
-        public boolean visit(FieldDeclaration node) {
-          addReference(node.getType());
-          return true;
-        }
-
-        @Override
-        public boolean visit(MethodDeclaration node) {
-          addReference(node.getReturnType2());
-          @SuppressWarnings("unchecked")
-          List<SingleVariableDeclaration> params = node.parameters();
-          for (SingleVariableDeclaration param : params) {
-            addReference(param.getType());
-          }
-          return true;
-        }
-
-        @Override
-        public boolean visit(TypeDeclaration node) {
-          ITypeBinding binding = Types.getTypeBinding(node);
-          if (binding.isEqualTo(Types.getNSObject())) {
-            return false;
-          }
-          addSuperType(node.getSuperclassType());
-          for (Iterator<?> iterator = node.superInterfaceTypes().iterator(); iterator.hasNext();) {
-            Object o = iterator.next();
-            if (o instanceof Type) {
-              addSuperType((Type) o);
-            } else {
-              throw new AssertionError("unknown AST type: " + o.getClass());
-            }
-          }
-          return true;
-        }
-      };
-      collector.run(type);
-    }
-
-    // Do a topological sort on the types declared in this unit, with an edge
-    // in the graph denoting a type inheritance. Super types will end up
-    // higher up in the sort.
-
-    types.clear();
-    LinkedHashSet<AbstractTypeDeclaration> rootTypes = Sets.newLinkedHashSet();
-    for (AbstractTypeDeclaration type : typesCopy) {
-      String name = Types.getTypeBinding(type).getBinaryName();
-      if (!superTypes.containsValue(name)) {
-        rootTypes.add(type);
-      }
-    }
-
-    while (!rootTypes.isEmpty()) {
-      AbstractTypeDeclaration type =
-          (AbstractTypeDeclaration) rootTypes.toArray()[rootTypes.size() - 1];
-      rootTypes.remove(type);
-      types.add(0, type);
-
-      ITypeBinding binding = Types.getTypeBinding(type);
-      String typeName = binding.getBinaryName();
-      // Copy the values to avoid a ConcurrentModificationException.
-      List<String> values = Lists.newArrayList(superTypes.get(typeName));
-      for (String superTypeName : values) {
-        superTypes.remove(typeName, superTypeName);
-        if (!superTypes.containsValue(superTypeName)) {
-          AbstractTypeDeclaration superType = index.get(superTypeName);
-          rootTypes.add(superType);
-        }
-      }
-    }
-
-    assert types.size() == typesCopy.size();
-
-    // For all other references, if the referred to type is declared
-    // after the reference, add a forward reference.
-    final Set<ITypeBinding> moreForwardTypes = Sets.newHashSet();
-    for (Map.Entry<String, String> entry : references.entries()) {
-      AbstractTypeDeclaration referrer = index.get(entry.getKey());
-      AbstractTypeDeclaration referred = index.get(entry.getValue());
-      if (types.indexOf(referred) > types.indexOf(referrer)) {
-        // Referred to type occurs after the reference; add a forward decl
-        moreForwardTypes.add(Types.getTypeBinding(referred));
-      }
-    }
-
-    return moreForwardTypes;
+  protected void generateFileFooter() {
+    newline();
+    popIgnoreDeprecatedDeclarationsPragma();
+    printf("#endif // _%s_H_\n", mainTypeName);
   }
 
   private void printInstanceVariables(List<FieldDeclaration> fields) {
     indent();
-    String lastAccess = "@protected";
+    boolean first = true;
     for (FieldDeclaration field : fields) {
       if ((field.getModifiers() & Modifier.STATIC) == 0) {
-        @SuppressWarnings("unchecked")
-        List<VariableDeclarationFragment> vars = field.fragments(); // safe by definition
+        List<VariableDeclarationFragment> vars = ASTUtil.getFragments(field);
         assert !vars.isEmpty();
         VariableDeclarationFragment var = vars.get(0);
-        if (var.getName().getIdentifier().startsWith("this$") && superDefinesVariable(var)) {
-          // Don't print, as it shadows an inner field in a super class.
-          continue;
-        }
-        String access = accessScope(field.getModifiers());
-        if (!access.equals(lastAccess)) {
-          print(' ');
-          println(access);
-          lastAccess = access;
+        // Need direct access to fields possibly from inner classes that are
+        // promoted to top level classes, so must make all fields public.
+        if (first) {
+          println(" @public");
+          first = false;
         }
         printIndent();
-        if (Types.isWeakReference(Types.getVariableBinding(var)) && Options.useARC()) {
+        if (Types.isWeakReference(Types.getVariableBinding(var))) {
+          // We must add this even without -use-arc because the header may be
+          // included by a file compiled with ARC.
           print("__weak ");
         }
         ITypeBinding varType = Types.getTypeBinding(vars.get(0));
-        String objcType = NameTable.javaRefToObjC(varType);
+        String objcType = NameTable.getSpecificObjCType(varType);
         boolean needsAsterisk = !varType.isPrimitive() && !objcType.matches("id|id<.*>|Class");
         if (needsAsterisk && objcType.endsWith(" *")) {
           // Strip pointer from type, as it will be added when appending fragment.
@@ -548,42 +480,83 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
     unindent();
   }
 
-  private void printProperties(List<FieldDeclaration> fields) {
-    int nPrinted = 0;
+  private void printAnnotationVariables(List<AnnotationTypeMemberDeclaration> members) {
+    indent();
+    for (AnnotationTypeMemberDeclaration member : members) {
+      printIndent();
+      ITypeBinding type = Types.getTypeBinding(member);
+      print(NameTable.getObjCType(type));
+      if (type.isPrimitive() || type.isInterface()) {
+        print(' ');
+      }
+      print(member.getName().getIdentifier());
+      println(";");
+    }
+    unindent();
+  }
+
+  private void printAnnotationConstructor(ITypeBinding annotation) {
+    if (annotation.getDeclaredMethods().length > 0) {
+      print(annotationConstructorDeclaration(annotation));
+      println(";\n");
+    }
+  }
+
+  private void printFieldSetters(ITypeBinding declaringType, List<FieldDeclaration> fields) {
+    boolean newlinePrinted = false;
     for (FieldDeclaration field : fields) {
-      if ((field.getModifiers() & Modifier.STATIC) == 0) {
-        ITypeBinding type = Types.getTypeBinding(field.getType());
-        @SuppressWarnings("unchecked")
-        List<VariableDeclarationFragment> vars = field.fragments(); // safe by definition
-        for (VariableDeclarationFragment var : vars) {
-          if (var.getName().getIdentifier().startsWith("this$") && superDefinesVariable(var)) {
-            // Don't print, as it shadows an inner field in a super class.
-            continue;
-          }
-          print("@property (nonatomic, ");
-          IVariableBinding varBinding = Types.getVariableBinding(var);
-          if (type.isPrimitive()) {
-            print("assign");
-          } else if (Types.isWeakReference(varBinding)) {
-            print(Options.useARC() ? "weak" : "assign");
-          } else if (type.isEqualTo(Types.getNSString())) {
-            print("copy");
-          } else {
-            print(Options.useARC() ? "strong" : "retain");
-          }
-          String typeString = NameTable.javaRefToObjC(type);
-          if (!typeString.endsWith("*")) {
-            typeString += " ";
-          }
-          String propertyName = NameTable.getName(var.getName());
-          println(String.format(") %s%s;", typeString, propertyName));
-          if (propertyName.startsWith("new") || propertyName.startsWith("copy")
-              || propertyName.startsWith("alloc") || propertyName.startsWith("init")) {
-            println(String.format("- (%s)%s OBJC_METHOD_FAMILY_NONE;",
-                NameTable.javaRefToObjC(type), propertyName));
-          }
-          nPrinted++;
+      ITypeBinding type = Types.getTypeBinding(field.getType());
+      int modifiers = field.getModifiers();
+      if (Modifier.isStatic(modifiers) || type.isPrimitive()) {
+        continue;
+      }
+      String typeStr = NameTable.getObjCType(type);
+      String declaringClassName = NameTable.getFullName(declaringType);
+      for (VariableDeclarationFragment var : ASTUtil.getFragments(field)) {
+        IVariableBinding varBinding = Types.getVariableBinding(var);
+        if (Types.isWeakReference(varBinding)) {
+          continue;
         }
+        String fieldName = NameTable.javaFieldToObjC(NameTable.getName(var.getName()));
+        if (!newlinePrinted) {
+          newlinePrinted = true;
+          newline();
+        }
+        println(String.format("J2OBJC_FIELD_SETTER(%s, %s, %s)",
+            declaringClassName, fieldName, typeStr));
+      }
+    }
+  }
+
+  private void printAnnotationProperties(List<AnnotationTypeMemberDeclaration> members) {
+    int nPrinted = 0;
+    for (AnnotationTypeMemberDeclaration member : members) {
+      ITypeBinding type = Types.getTypeBinding(member.getType());
+      print("@property (readonly) ");
+      String typeString = NameTable.getSpecificObjCType(type);
+      String propertyName = NameTable.getName(member.getName());
+      println(String.format("%s%s%s;", typeString, typeString.endsWith("*") ? "" : " ",
+          propertyName));
+      if (propertyName.startsWith("new") || propertyName.startsWith("copy")
+          || propertyName.startsWith("alloc") || propertyName.startsWith("init")) {
+        println(String.format("- (%s)%s OBJC_METHOD_FAMILY_NONE;", typeString, propertyName));
+      }
+      nPrinted++;
+    }
+    if (nPrinted > 0) {
+      newline();
+    }
+  }
+
+  private void printAnnotationAccessors(List<AnnotationTypeMemberDeclaration> members) {
+    int nPrinted = 0;
+    for (AnnotationTypeMemberDeclaration member : members) {
+      if (member.getDefault() != null) {
+        ITypeBinding type = Types.getTypeBinding(member.getType());
+        String typeString = NameTable.getSpecificObjCType(type);
+        String propertyName = NameTable.getName(member.getName());
+        printf("+ (%s)%sDefault;\n", typeString, propertyName);
+        nPrinted++;
       }
     }
     if (nPrinted > 0) {
@@ -595,7 +568,7 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
     ITypeBinding type = Types.getTypeBinding(node);
     boolean hadConstant = false;
     for (IVariableBinding field : type.getDeclaredFields()) {
-      if (Types.isPrimitiveConstant(field)) {
+      if (BindingUtil.isPrimitiveConstant(field)) {
         printf("#define %s ", NameTable.getPrimitiveConstantName(field));
         Object value = field.getConstantValue();
         assert value != null;
@@ -618,14 +591,14 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
         } else if (value instanceof Long) {
           long l = ((Long) value).longValue();
           if (l == Long.MIN_VALUE) {
-            println("-0x7fffffffffffffffLL - 1");
+            println("((long long) 0x8000000000000000LL)");
           } else {
             println(value.toString());
           }
         } else if (value instanceof Integer) {
           long l = ((Integer) value).intValue();
           if (l == Integer.MIN_VALUE) {
-            println("-0x7fffffff - 1");
+            println("((int) 0x80000000)");
           } else {
             println(value.toString());
           }
@@ -670,25 +643,6 @@ public class ObjectiveCHeaderGenerator extends ObjectiveCSourceFileGenerator {
     if (hadConstant) {
       newline();
     }
-  }
-
-  private String accessScope(int modifiers) {
-    if (Options.inlineFieldAccess()) {
-      // Need direct access to fields possibly from inner classes that are
-      // promoted to top level classes, so must make all fields public.
-      return "@public";
-    }
-
-    if ((modifiers & Modifier.PUBLIC) > 0) {
-      return "@public";
-    }
-    if ((modifiers & Modifier.PROTECTED) > 0) {
-      return "@protected";
-    }
-    if ((modifiers & Modifier.PRIVATE) > 0) {
-      return "@private";
-    }
-    return "@package";
   }
 
   /**

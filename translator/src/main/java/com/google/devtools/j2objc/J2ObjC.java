@@ -23,8 +23,12 @@ import com.google.common.io.CharStreams;
 import com.google.common.io.Files;
 import com.google.devtools.j2objc.gen.ObjectiveCHeaderGenerator;
 import com.google.devtools.j2objc.gen.ObjectiveCImplementationGenerator;
+import com.google.devtools.j2objc.gen.ObjectiveCSegmentedHeaderGenerator;
 import com.google.devtools.j2objc.translate.AnonymousClassConverter;
+import com.google.devtools.j2objc.translate.ArrayRewriter;
 import com.google.devtools.j2objc.translate.Autoboxer;
+import com.google.devtools.j2objc.translate.ComplexExpressionExtractor;
+import com.google.devtools.j2objc.translate.CopyAllFieldsWriter;
 import com.google.devtools.j2objc.translate.DeadCodeEliminator;
 import com.google.devtools.j2objc.translate.DestructorGenerator;
 import com.google.devtools.j2objc.translate.GwtConverter;
@@ -32,9 +36,17 @@ import com.google.devtools.j2objc.translate.InitializationNormalizer;
 import com.google.devtools.j2objc.translate.InnerClassExtractor;
 import com.google.devtools.j2objc.translate.JavaToIOSMethodTranslator;
 import com.google.devtools.j2objc.translate.JavaToIOSTypeConverter;
+import com.google.devtools.j2objc.translate.NilCheckResolver;
+import com.google.devtools.j2objc.translate.OperatorRewriter;
 import com.google.devtools.j2objc.translate.OuterReferenceFixer;
 import com.google.devtools.j2objc.translate.OuterReferenceResolver;
 import com.google.devtools.j2objc.translate.Rewriter;
+import com.google.devtools.j2objc.translate.StaticVarRewriter;
+import com.google.devtools.j2objc.translate.TypeSorter;
+import com.google.devtools.j2objc.types.HeaderImportCollector;
+import com.google.devtools.j2objc.types.IOSTypeBinding;
+import com.google.devtools.j2objc.types.ImplementationImportCollector;
+import com.google.devtools.j2objc.types.Import;
 import com.google.devtools.j2objc.types.Types;
 import com.google.devtools.j2objc.util.ASTNodeException;
 import com.google.devtools.j2objc.util.DeadCodeMap;
@@ -46,6 +58,7 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jface.text.BadLocationException;
 import org.eclipse.jface.text.Document;
 import org.eclipse.text.edits.MalformedTreeException;
@@ -65,11 +78,13 @@ import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.Charset;
 import java.text.DateFormat;
+import java.util.ArrayDeque;
 import java.util.Date;
 import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.jar.JarEntry;
 import java.util.jar.JarInputStream;
 import java.util.logging.Level;
@@ -90,7 +105,8 @@ import java.util.zip.ZipFile;
 public class J2ObjC {
   private static String currentFileName;
   private static CompilationUnit currentUnit;
-  private static int nFiles = 0;
+  private static ArrayDeque<String> pendingFiles = new ArrayDeque<String>();
+  private static List<String> translatedFiles = Lists.newArrayList();
   private static int nErrors = 0;
   private static int nWarnings = 0;
 
@@ -118,13 +134,24 @@ public class J2ObjC {
 
   private static final Logger logger = Logger.getLogger(J2ObjC.class.getName());
 
+  static void translate() throws IOException {
+    while (!pendingFiles.isEmpty()) {
+      String file = pendingFiles.remove();
+      if (!translatedFiles.contains(file)) {
+        translatedFiles.add(file);  // Do before translating, to avoid recursion.
+        printInfo("translating " + file);
+        translate(file);
+      }
+    }
+  }
+
   /**
    * Parse a specified Java source file and generate Objective C header(s)
    * and implementation file(s) from it.
    *
    * @param filename the source file to translate
    */
-  void translate(String filename) throws IOException {
+  static void translate(String filename) throws IOException {
     long startTime = System.currentTimeMillis();
     int beginningErrorLevel = getCurrentErrorLevel();
     logger.finest("reading " + filename);
@@ -149,25 +176,34 @@ public class J2ObjC {
     long translateTime = 0L;
     initializeTranslation(currentUnit);
     try {
-      String newSource = translate(currentUnit, source);
+      translate(currentUnit);
       translateTime = System.currentTimeMillis();
 
       if (currentUnit.types().isEmpty()) {
         logger.finest("skipping dead file " + filename);
       } else {
         if (Options.printConvertedSources()) {
-          saveConvertedSource(filename, newSource);
+          saveConvertedSource(filename, source, currentUnit);
         }
 
         logger.finest(
             "writing output file(s) to " + Options.getOutputDirectory().getAbsolutePath());
 
         // write header
-        ObjectiveCHeaderGenerator.generate(filename, source, currentUnit);
+        if (Options.generateSegmentedHeaders()) {
+          ObjectiveCSegmentedHeaderGenerator.generate(filename, source, currentUnit);
+        } else {
+          ObjectiveCHeaderGenerator.generate(filename, source, currentUnit);
+        }
 
         // write implementation file
         ObjectiveCImplementationGenerator.generate(
             filename, Options.getLanguage(), currentUnit, source);
+
+        if (Options.buildClosure()) {
+          // Add out-of-date dependencies to translation list.
+          checkDependencies(filename, currentUnit);
+        }
       }
     } catch (ASTNodeException e) {
       error(e);
@@ -178,6 +214,82 @@ public class J2ObjC {
     long endTime = System.currentTimeMillis();
     printTimingInfo(readTime - startTime, compileTime - readTime, translateTime - compileTime,
         endTime - translateTime, endTime - startTime);
+  }
+
+  private static void checkDependencies(String sourceFile, CompilationUnit unit) {
+    HeaderImportCollector hdrCollector = new HeaderImportCollector();
+    hdrCollector.collect(unit);
+    ImplementationImportCollector implCollector = new ImplementationImportCollector();
+    implCollector.collect(unit, sourceFile);
+    Set<Import> imports = hdrCollector.getForwardDeclarations();
+    imports.addAll(hdrCollector.getSuperTypes());
+    imports.addAll(implCollector.getImports());
+    for (Import imp : imports) {
+      maybeAddToClosure(imp.getType());
+    }
+  }
+
+  private static void maybeAddToClosure(ITypeBinding type) {
+    if (type instanceof IOSTypeBinding) {
+      return;  // Ignore core types.
+    }
+    String sourceName = type.getErasure().getQualifiedName().replace('.', '/') + ".java";
+
+    // Check if source file exists.
+    boolean sourceExists = false;
+    for (String path : Options.getSourcePathEntries()) {
+      if (lastModified(path, sourceName) > 0L) {
+        sourceExists = true;
+        break;
+      }
+    }
+    if (!sourceExists) {
+      return;
+    }
+
+    // Check if generated file doesn't exist, or is older than source file.
+    File headerSource = new File(Options.getOutputDirectory(), sourceName.replace(".java", ".h"));
+    for (String path : Options.getSourcePathEntries()) {
+      long sourceModified = lastModified(path, sourceName);
+      if (sourceModified != 0L) {
+        if (sourceModified < headerSource.lastModified()) {
+          return;
+        }
+        File f = new File(path);
+        if (f.isDirectory()) {
+          addSourceFile(path + '/' + sourceName);
+        } else {
+          addSourceFile(sourceName);
+        }
+        return;
+      }
+    }
+    warning("could not find source path for " + sourceName);
+  }
+
+  /**
+   * Returns the lastModified time of the specified file in the specified
+   * path. If the file is not in the path, 0L is returned.
+   */
+  private static long lastModified(String path, String fileName) {
+    File f = new File(path);
+    if (f.isDirectory()) {
+      File source = new File(path, fileName);
+      return source.exists() ? source.lastModified() : 0L;
+    } else if (f.isFile() && (path.endsWith(".jar") || path.endsWith(".zip"))) {
+      try {
+        ZipFile archive = new ZipFile(f);
+        try {
+          ZipEntry entry = archive.getEntry(fileName);
+          return entry != null ? f.lastModified() : 0L;
+        } finally {
+          archive.close();
+        }
+      } catch (IOException e) {
+        // Silently fail (like javac does).
+      }
+    }
+    return 0L;
   }
 
   private static CompilationUnit parse(String filename, String source) {
@@ -214,7 +326,7 @@ public class J2ObjC {
     return errors;
   }
 
-  private void cleanup() {
+  private static void cleanup() {
     NameTable.cleanup();
     Types.cleanup();
     OuterReferenceResolver.cleanup();
@@ -247,7 +359,7 @@ public class J2ObjC {
     return doc.get();
   }
 
-  private String[] removeDeadCode(String[] files) throws IOException {
+  private static String[] removeDeadCode(String[] files) throws IOException {
     loadDeadCodeMap();
     if (Options.getDeadCodeMap() != null) {
       for (int i = 0; i < files.length; i++) {
@@ -290,7 +402,7 @@ public class J2ObjC {
     return files;
   }
 
-  private String removeDeadCode(String path, String source) throws IOException {
+  private static String removeDeadCode(String path, String source) throws IOException {
     long startTime = System.currentTimeMillis();
     int beginningErrorLevel = getCurrentErrorLevel();
 
@@ -340,7 +452,7 @@ public class J2ObjC {
    * @return the rewritten source
    * @throws AssertionError if the translator makes invalid edits
    */
-  public static String translate(CompilationUnit unit, String source) {
+  public static void translate(CompilationUnit unit) {
 
     // Update code that has GWT references.
     new GwtConverter().run(unit);
@@ -361,6 +473,12 @@ public class J2ObjC {
     // Fix references to outer scope and captured variables.
     new OuterReferenceFixer().run(unit);
 
+    // Breaks up deeply nested expressions such as chained method calls.
+    new ComplexExpressionExtractor().run(unit);
+
+    // Adds nil_chk calls wherever an expression is dereferenced.
+    new NilCheckResolver().run(unit);
+
     // Translate core Java type use to similar iOS types
     new JavaToIOSTypeConverter().run(unit);
     Map<String, String> methodMappings = Options.getMethodMappings();
@@ -370,10 +488,22 @@ public class J2ObjC {
     }
     new JavaToIOSMethodTranslator(unit.getAST(), methodMappings).run(unit);
 
+    new ArrayRewriter().run(unit);
+
+    new StaticVarRewriter().run(unit);
+
+    // Reorders the types so that superclasses are declared before classes that
+    // extend them.
+    TypeSorter.sortTypes(unit);
+
     // Add dealloc/finalize method(s), if necessary.  This is done
     // after inner class extraction, so that each class releases
     // only its own instance variables.
     new DestructorGenerator().run(unit);
+
+    new CopyAllFieldsWriter().run(unit);
+
+    new OperatorRewriter().run(unit);
 
     for (Plugin plugin : Options.getPlugins()) {
       plugin.processUnit(unit);
@@ -381,17 +511,6 @@ public class J2ObjC {
 
     // Verify all modified nodes have type bindings
     Types.verifyNode(unit);
-
-    Document doc = new Document(source);
-    TextEdit edit = unit.rewrite(doc, Options.getCompilerOptions());
-    try {
-      edit.apply(doc);
-    } catch (MalformedTreeException e) {
-      throw new AssertionError(e);
-    } catch (BadLocationException e) {
-      throw new AssertionError(e);
-    }
-    return doc.get();
   }
 
   public static void initializeTranslation(CompilationUnit unit) {
@@ -401,11 +520,18 @@ public class J2ObjC {
     OuterReferenceResolver.resolve(unit);
   }
 
-  private void saveConvertedSource(String filename, String content) {
+  private static void saveConvertedSource(String filename, String source, CompilationUnit unit) {
     try {
+      Document doc = new Document(source);
+      TextEdit edit = unit.rewrite(doc, Options.getCompilerOptions());
+      edit.apply(doc);
       File outputFile = new File(Options.getOutputDirectory(), filename);
       outputFile.getParentFile().mkdirs();
-      Files.write(content, outputFile, Charset.defaultCharset());
+      Files.write(doc.get(), outputFile, Charset.defaultCharset());
+    } catch (MalformedTreeException e) {
+      throw new AssertionError(e);
+    } catch (BadLocationException e) {
+      throw new AssertionError(e);
     } catch (IOException e) {
       error(e.getMessage());
     }
@@ -429,7 +555,7 @@ public class J2ObjC {
       }
     }
     parser.setEnvironment(fullClasspath.toArray(new String[0]), Options.getSourcePathEntries(),
-        null, true);
+        Options.getFileEncodings(), true);
 
     // Workaround for ASTParser.setEnvironment() bug, which ignores its
     // last parameter.  This has been fixed in the Eclipse post-3.7 Java7
@@ -448,7 +574,7 @@ public class J2ObjC {
     }
   }
 
-  private String getSource(String path) throws IOException {
+  private static String getSource(String path) throws IOException {
     File file = findSourceFile(path);
     if (file == null) {
       return findArchivedSource(path);
@@ -457,7 +583,7 @@ public class J2ObjC {
     }
   }
 
-  private File findSourceFile(String filename) {
+  private static File findSourceFile(String filename) {
     File f = getFileOrNull(filename);
     if (f != null) {
       return f;
@@ -471,7 +597,7 @@ public class J2ObjC {
     return null;
   }
 
-  private String findArchivedSource(String path) throws IOException {
+  private static String findArchivedSource(String path) throws IOException {
     for (String pathEntry : Options.getSourcePathEntries()) {
       File f = new File(pathEntry);
       if (f.exists() && f.isFile()) {
@@ -497,12 +623,12 @@ public class J2ObjC {
     return null;
   }
 
-  private File getFileOrNull(String fileName) {
+  private static File getFileOrNull(String fileName) {
     File f = new File(fileName);
     return f.exists() ? f : null;
   }
 
-  private static void translateSourceJar(J2ObjC compiler, String jarPath) throws IOException {
+  private static void translateSourceJar(String jarPath) throws IOException {
     File f = new File(jarPath);
     if (f.exists() && f.isFile()) {
       ZipFile zfile = new ZipFile(f);
@@ -513,8 +639,7 @@ public class J2ObjC {
           String path = entry.getName();
           if (path.endsWith(".java")) {
             printInfo("translating " + path);
-            compiler.translate(path);
-            nFiles++;
+            translate(path);
           }
         }
       } catch (ZipException e) {
@@ -523,6 +648,35 @@ public class J2ObjC {
       } finally {
         zfile.close();  // Also closes input stream.
       }
+    }
+  }
+
+  /**
+   * Add a file to be translated, if it hasn't been yet.
+   */
+  public static void addSourceFile(String file) {
+    if (!translatedFiles.contains(file) && !pendingFiles.contains(file)) {
+      pendingFiles.add(file);
+    }
+  }
+
+  /**
+   * Translate files listed in a manifest file.
+   */
+  private static void addAtFiles(String atFile) throws IOException {
+    if (atFile.isEmpty()) {
+      error("no @ file specified");
+      exit();
+    }
+    File f = new File(atFile);
+    if (!f.exists()) {
+      error("no such file: " + atFile);
+      exit();
+    }
+    String fileList = getSource(atFile);
+    String[] files = fileList.split("\\s+");  // Split on any whitespace.
+    for (String file : files) {
+      addSourceFile(file);
     }
   }
 
@@ -565,6 +719,16 @@ public class J2ObjC {
     }
   }
 
+  @VisibleForTesting
+  static void resetWarnings() {
+    nWarnings = 0;
+  }
+
+  @VisibleForTesting
+  static void resetErrors() {
+    nErrors = 0;
+  }
+
   /**
    * Report an error with a specific AST node.
    */
@@ -581,7 +745,7 @@ public class J2ObjC {
     warning(String.format("%s:%s: %s", currentFileName, line, message));
   }
 
-  private int getCurrentErrorLevel() {
+  private static int getCurrentErrorLevel() {
     return Options.treatWarningsAsErrors() ? nErrors + nWarnings : nErrors;
   }
 
@@ -644,7 +808,6 @@ public class J2ObjC {
   static void reset() {
     nErrors = 0;
     nWarnings = 0;
-    nFiles = 0;
     currentFileName = null;
     currentUnit = null;
   }
@@ -658,6 +821,7 @@ public class J2ObjC {
   }
 
   private static void exit() {
+    int nFiles = translatedFiles.size();
     printInfo(String.format("Translated %d %s: %d errors, %d warnings",
         nFiles, nFiles == 1 ? "file" : "files", nErrors, nWarnings));
     Options.deleteTemporaryDirectory();
@@ -709,6 +873,7 @@ public class J2ObjC {
 
   private static void initPlugins(String[] pluginPaths, String pluginOptionString)
       throws IOException {
+    @SuppressWarnings("resource")
     JarFileLoader classLoader = new JarFileLoader();
     for (String path : pluginPaths) {
       if (path.endsWith(".jar")) {
@@ -724,8 +889,8 @@ public class J2ObjC {
               continue;
             }
 
-            String className =
-                entryName.replaceAll("/", "\\.").substring(0, entryName.length() - ".class".length());
+            String className = entryName.replaceAll("/", "\\.").substring(
+                0, entryName.length() - ".class".length());
 
             try {
               Class<?> clazz = classLoader.loadClass(className);
@@ -775,7 +940,6 @@ public class J2ObjC {
       error(e.getMessage());
       System.exit(1);
     }
-    J2ObjC compiler = new J2ObjC();
 
     try {
       initPlugins(Options.getPluginPathEntries(), Options.getPluginOptionString());
@@ -785,30 +949,29 @@ public class J2ObjC {
 
     // Remove dead-code first, so modified file paths are replaced in the
     // translation list.
-    int beginningErrorLevel = compiler.getCurrentErrorLevel();
+    int beginningErrorLevel = getCurrentErrorLevel();
     try {
-      files = compiler.removeDeadCode(files);
+      files = removeDeadCode(files);
     } catch (IOException e) {
       error(e.getMessage());
     }
-    if (compiler.getCurrentErrorLevel() > beginningErrorLevel) {
+    if (getCurrentErrorLevel() > beginningErrorLevel) {
       return;
     }
 
-    nFiles = 0;
-    for (int i = 0; i < files.length; i++) {
-      String file = files[i];
-      try {
-        if (file.endsWith(".java")) {  // Eclipse may send all project entities.
-          printInfo("translating " + file);
-          compiler.translate(file);
-          nFiles++;
-        } else if (file.endsWith(".jar")) {
-          translateSourceJar(compiler, file);
+    try {
+      for (int i = 0; i < files.length; i++) {
+        if (files[i].endsWith(".java")) {  // Eclipse may send all project entities.
+          pendingFiles.add(files[i]);
+        } else if (files[i].endsWith(".jar")) {
+          translateSourceJar(files[i]);
+        } else  if (files[i].startsWith("@")) {
+          addAtFiles(files[i].substring(1));
         }
-      } catch (IOException e) {
-        error(e.getMessage());
+        translate();
       }
+    } catch (IOException e) {
+      error(e.getMessage());
     }
 
     for (Plugin plugin : Options.getPlugins()) {

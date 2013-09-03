@@ -20,6 +20,7 @@
 //
 
 #import "IOSCharArray.h"
+#import "IOSArrayClass.h"
 #import "IOSPrimitiveClass.h"
 #import "java/lang/Character.h"
 
@@ -51,12 +52,17 @@
 }
 
 - (unichar)charAtIndex:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return buffer_[index];
 }
 
+- (unichar *)charRefAtIndex:(NSUInteger)index {
+  IOSArray_checkIndex(size_, index);
+  return &buffer_[index];
+}
+
 - (unichar)replaceCharAtIndex:(NSUInteger)index withChar:(unichar)c {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   buffer_[index] = c;
   return c;
 }
@@ -68,37 +74,37 @@
 }
 
 - (void)getChars:(unichar *)buffer length:(NSUInteger)length {
-  IOSArray_checkIndex(self, length - 1);
+  IOSArray_checkIndex(size_, length - 1);
   memcpy(buffer, buffer_, length * sizeof(unichar));
 }
 
 - (void) arraycopy:(NSRange)sourceRange
        destination:(IOSArray *)destination
             offset:(NSInteger)offset {
-  IOSArray_checkRange(self, sourceRange);
-  IOSArray_checkRange(destination, NSMakeRange(offset, sourceRange.length));
+  IOSArray_checkRange(size_, sourceRange);
+  IOSArray_checkRange(destination->size_, NSMakeRange(offset, sourceRange.length));
   memmove(((IOSCharArray *) destination)->buffer_ + offset,
           self->buffer_ + sourceRange.location,
           sourceRange.length * sizeof(unichar));
 }
 
 - (unichar)incr:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return ++buffer_[index];
 }
 
 - (unichar)decr:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return --buffer_[index];
 }
 
 - (unichar)postIncr:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return buffer_[index]++;
 }
 
 - (unichar)postDecr:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return buffer_[index]--;
 }
 
@@ -107,13 +113,11 @@
 }
 
 - (IOSClass *)elementType {
-  id type = [[IOSPrimitiveClass alloc]
-             initWithName:@"char" type:@"C"];
-#if __has_feature(objc_arc)
-  return type;
-#else
-  return [type autorelease];
-#endif
+  return [IOSClass charClass];
+}
+
++ (IOSClass *)iosClass {
+  return [IOSClass arrayClassWithComponentType:[IOSClass charClass]];
 }
 
 - (id)copyWithZone:(NSZone *)zone {

@@ -17,6 +17,7 @@ package com.google.devtools.cyclefinder;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import com.google.devtools.j2objc.translate.OuterReferenceResolver;
 
 import org.eclipse.jdt.core.compiler.IProblem;
 import org.eclipse.jdt.core.dom.AST;
@@ -69,6 +70,7 @@ public class CycleFinder {
           }
         }
         typeCollector.visitAST(ast);
+        OuterReferenceResolver.resolve(ast);
       }
     };
   }
@@ -87,15 +89,20 @@ public class CycleFinder {
   }
 
   private static ASTParser newParser(Options options) {
-    ASTParser parser = ASTParser.newParser(AST.JLS3);
+    ASTParser parser = ASTParser.newParser(AST.JLS4);
     parser.setCompilerOptions(ImmutableMap.of(
-        org.eclipse.jdt.core.JavaCore.COMPILER_SOURCE, "1.6",
-        org.eclipse.jdt.core.JavaCore.COMPILER_CODEGEN_TARGET_PLATFORM, "1.6",
-        org.eclipse.jdt.core.JavaCore.COMPILER_COMPLIANCE, "1.6"));
+        org.eclipse.jdt.core.JavaCore.COMPILER_SOURCE, "1.7",
+        org.eclipse.jdt.core.JavaCore.COMPILER_CODEGEN_TARGET_PLATFORM, "1.7",
+        org.eclipse.jdt.core.JavaCore.COMPILER_COMPLIANCE, "1.7"));
     parser.setResolveBindings(true);
+    String[] sourcePathEntries = splitEntries(options.getSourcepath());
+    String[] encodings = new String[sourcePathEntries.length];
+    for (int i = 0; i < encodings.length; i++) {
+      encodings[i] = Options.fileEncoding();
+    }
     parser.setEnvironment(
         splitEntries(options.getBootclasspath() + ":" + options.getClasspath()),
-        splitEntries(options.getSourcepath()), null, false);
+        sourcePathEntries, encodings, false);
     return parser;
   }
 
@@ -105,14 +112,27 @@ public class CycleFinder {
     nErrors++;
   }
 
-  private void printErrors() {
-    for (String error : errors) {
-      errStream.println("error: " + error);
+  private void exitOnErrors() {
+    if (nErrors > 0) {
+      errStream.println("Failed with " + nErrors + " errors:");
+      for (String error : errors) {
+        errStream.println("error: " + error);
+      }
+      System.exit(nErrors);
     }
   }
 
   public int errorCount() {
     return nErrors;
+  }
+
+  private void testFileExistence() {
+    for (String filePath : options.getSourceFiles()) {
+      File f = new File(filePath);
+      if (!f.exists()) {
+        error("File not found: " + filePath);
+      }
+    }
   }
 
   public List<List<Edge>> findCycles() throws IOException {
@@ -156,13 +176,11 @@ public class CycleFinder {
     }
     Options options = Options.parse(args);
     CycleFinder finder = new CycleFinder(options, System.out, System.err);
+    finder.testFileExistence();
+    finder.exitOnErrors();
     List<List<Edge>> cycles = finder.findCycles();
-    if (finder.errorCount() > 0) {
-      System.out.println("Failed with " + finder.errorCount() + " errors:");
-      finder.printErrors();
-    } else {
-      printCycles(cycles, System.out);
-    }
+    finder.exitOnErrors();
+    printCycles(cycles, System.out);
     System.exit(finder.errorCount() + cycles.size());
   }
 }

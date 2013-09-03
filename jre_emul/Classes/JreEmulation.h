@@ -17,22 +17,19 @@
 // the 'JreEmulation' project.
 //
 
+#ifndef _JreEmulation_H_
+#define _JreEmulation_H_
+
 #ifndef __has_feature
 #define __has_feature(x) 0  // Compatibility with non-clang compilers.
 #endif
 
 #ifdef __OBJC__
-# import <Foundation/Foundation.h>
-# import "IOSArray.h"
-# import "java/lang/CharSequence.h"
-# import "java/lang/Comparable.h"
-# import "IOSClass.h"
-# import "JavaObject.h"
-# import "NSObject+JavaObject.h"
-# import "NSString+JavaString.h"
-# import "IOSClass.h"
-# import <fcntl.h>
-# import "JreMemDebug.h"
+#import <Foundation/Foundation.h>
+#import "JavaObject.h"
+#import "NSObject+JavaObject.h"
+#import "NSString+JavaString.h"
+#import "JreMemDebug.h"
 
 # ifndef __has_attribute
 #  define __has_attribute(x) 0 // Compatibility with non-clang compilers.
@@ -47,20 +44,46 @@
 # endif
 
 # if __has_feature(objc_arc)
-#  define AUTORELEASE(x) x
 #  define ARCBRIDGE __bridge
 #  define ARCBRIDGE_TRANSFER __bridge_transfer
 #  define ARC_CONSUME_PARAMETER __attribute((ns_consumed))
+#  define AUTORELEASE(x) x
+#  define RETAIN(x) x
+#  define RETAIN_AND_AUTORELEASE(x) x
 # else
-#  define AUTORELEASE(x) [x autorelease]
 #  define ARCBRIDGE
 #  define ARCBRIDGE_TRANSFER
 #  define ARC_CONSUME_PARAMETER
+#  define AUTORELEASE(x) [x autorelease]
+#  define RETAIN(x) [x retain]
+#  define RETAIN_AND_AUTORELEASE(x) [[x retain] autorelease]
 # endif
 
 #define J2OBJC_COMMA() ,
 
-static inline id JreOperatorRetainedAssign(id *pIvar, id value) {
+#ifdef J2OBJC_COUNT_NIL_CHK
+extern int j2objc_nil_chk_count;
+#endif
+
+extern void JrePrintNilChkCount();
+extern void JrePrintNilChkCountAtExit();
+
+// Marked as unused to avoid a clang warning when this file is included
+// but NIL_CHK isn't used.
+__attribute__ ((unused)) static inline id nil_chk(id __unsafe_unretained p) {
+#ifdef J2OBJC_COUNT_NIL_CHK
+  j2objc_nil_chk_count++;
+#endif
+#if !defined(J2OBJC_DISABLE_NIL_CHECKS)
+  return p ? p : [NSObject throwNullPointerException];
+#else
+  return p;
+#endif
+}
+
+// Should only be used with manual reference counting.
+#if !__has_feature(objc_arc)
+static inline id JreOperatorRetainedAssign(id *pIvar, id self, id value) {
   // We need a lock here because during
   // JreMemDebugGenerateAllocationsReport(), we want the list of links
   // of the graph to be consistent.
@@ -69,12 +92,10 @@ static inline id JreOperatorRetainedAssign(id *pIvar, id value) {
     JreMemDebugLock();
   }
 #endif // JREMEMDEBUG_ENABLED
-#if __has_feature(objc_arc)
-  * pIvar = value;
-#else
-  [* pIvar autorelease];
-  * pIvar = [value retain];
-#endif // __has_feature(objc_arc)
+  if (* pIvar != self) {
+    [* pIvar autorelease];
+  }
+  * pIvar = value != self ? [value retain] : self;
 #if JREMEMDEBUG_ENABLED
   if (JreMemDebugEnabled) {
     JreMemDebugUnlock();
@@ -83,11 +104,54 @@ static inline id JreOperatorRetainedAssign(id *pIvar, id value) {
 
   return value;
 }
+#endif
 
 // Converts main() arguments into an IOSObjectArray of NSStrings.
 FOUNDATION_EXPORT
     IOSObjectArray *JreEmulationMainArguments(int argc, const char *argv[]);
 
-FOUNDATION_EXPORT id JreOperatorRetainedAssign(id *pIvar, id value);
+#if __has_feature(objc_arc)
+#define J2OBJC_FIELD_SETTER(CLASS, FIELD, TYPE) \
+  static inline TYPE CLASS##_set_##FIELD(CLASS *instance, TYPE value) { \
+    return instance->FIELD = value; \
+  }
+#else
+#define J2OBJC_FIELD_SETTER(CLASS, FIELD, TYPE) \
+  static inline TYPE CLASS##_set_##FIELD(CLASS *instance, TYPE value) { \
+    return JreOperatorRetainedAssign(&instance->FIELD, instance, value); \
+  }
+#endif
+
+#define UR_SHIFT_ASSIGN_DEFN(NAME, TYPE) \
+  static inline TYPE URShiftAssign##NAME(TYPE *pLhs, int rhs) { \
+    return *pLhs = (TYPE) (((unsigned TYPE) *pLhs) >> rhs); \
+  }
+
+UR_SHIFT_ASSIGN_DEFN(Byte, char)
+UR_SHIFT_ASSIGN_DEFN(Int, int)
+UR_SHIFT_ASSIGN_DEFN(Long, long long)
+UR_SHIFT_ASSIGN_DEFN(Short, short int)
+
+// This macro is used by the translator to add increment and decrement
+// operations to the header files of the boxed types.
+#define BOXED_INC_AND_DEC(CNAME, LNAME, TYPE, KEYWORD) \
+  static inline TYPE *PreIncr##CNAME(TYPE **value) { \
+    return *value = [TYPE valueOfWith##KEYWORD:[*value LNAME##Value] + 1]; \
+  } \
+  static inline TYPE *PostIncr##CNAME(TYPE **value) { \
+    TYPE *original = *value; \
+    *value = [TYPE valueOfWith##KEYWORD:[*value LNAME##Value] + 1]; \
+    return original; \
+  } \
+  static inline TYPE *PreDecr##CNAME(TYPE **value) { \
+    return *value = [TYPE valueOfWith##KEYWORD:[*value LNAME##Value] - 1]; \
+  } \
+  static inline TYPE *PostDecr##CNAME(TYPE **value) { \
+    TYPE *original = *value; \
+    *value = [TYPE valueOfWith##KEYWORD:[*value LNAME##Value] - 1]; \
+    return original; \
+  }
 
 #endif // __OBJC__
+
+#endif // _JreEmulation_H_

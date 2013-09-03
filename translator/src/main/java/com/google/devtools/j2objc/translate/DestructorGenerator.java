@@ -20,6 +20,7 @@ import com.google.common.collect.Lists;
 import com.google.devtools.j2objc.Options;
 import com.google.devtools.j2objc.types.GeneratedMethodBinding;
 import com.google.devtools.j2objc.types.Types;
+import com.google.devtools.j2objc.util.ASTUtil;
 import com.google.devtools.j2objc.util.ErrorReportingASTVisitor;
 import com.google.devtools.j2objc.util.NameTable;
 
@@ -27,7 +28,6 @@ import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.Assignment;
 import org.eclipse.jdt.core.dom.Block;
-import org.eclipse.jdt.core.dom.BodyDeclaration;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ExpressionStatement;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
@@ -60,6 +60,7 @@ import java.util.List;
 public class DestructorGenerator extends ErrorReportingASTVisitor {
   private final String destructorName;
 
+  // TODO(user): Move these to NameTable.java.
   public static final String FINALIZE_METHOD = "finalize";
   public static final String DEALLOC_METHOD = "dealloc";
 
@@ -76,7 +77,7 @@ public class DestructorGenerator extends ErrorReportingASTVisitor {
           @Override
           public boolean visit(VariableDeclarationFragment node) {
             IVariableBinding binding = Types.getVariableBinding(node);
-            if (!Modifier.isStatic(field.getModifiers()) && !Types.isConstantVariable(binding)) {
+            if (!Modifier.isStatic(field.getModifiers())) {
               releaseableFields.add(binding);
             }
             return true;
@@ -102,13 +103,11 @@ public class DestructorGenerator extends ErrorReportingASTVisitor {
         }
       }
 
-      // No destructor, so create a new one.
-      if (!foundDestructor && !Options.useARC()) {
+      // No destructor, so create a new one if there are releasable fields.
+      if (!foundDestructor && !Options.useARC() && !releaseableFields.isEmpty()) {
         MethodDeclaration finalizeMethod =
             buildFinalizeMethod(node.getAST(), Types.getTypeBinding(node), releaseableFields);
-        @SuppressWarnings("unchecked")
-        List<BodyDeclaration> declarations = node.bodyDeclarations();
-        declarations.add(finalizeMethod);
+        ASTUtil.getBodyDeclarations(node).add(finalizeMethod);
       }
     }
 
@@ -133,9 +132,7 @@ public class DestructorGenerator extends ErrorReportingASTVisitor {
           if (!Modifier.isStatic(m.getModifiers()) && m.getName().equals("finalize") &&
               m.getParameterTypes().length == 0) {
             assert node.getParent() instanceof Block;
-            @SuppressWarnings("unchecked")
-            List<Statement> parentStatements = ((Block) node.getParent()).statements();
-            parentStatements.remove(node);
+            ASTUtil.getStatements((Block) node.getParent()).remove(node);
             return false;
           }
         }
@@ -169,7 +166,6 @@ public class DestructorGenerator extends ErrorReportingASTVisitor {
         FINALIZE_METHOD.equals(methodName.getIdentifier());
   }
 
-  @SuppressWarnings("unchecked")
   private void addReleaseStatements(MethodDeclaration method, List<IVariableBinding> fields) {
     // Find existing super.finalize(), if any.
     final boolean[] hasSuperFinalize = new boolean[1];
@@ -182,11 +178,11 @@ public class DestructorGenerator extends ErrorReportingASTVisitor {
       }
     });
 
-    List<Statement> statements = method.getBody().statements(); // safe by definition
+    List<Statement> statements = ASTUtil.getStatements(method.getBody());
     if (!statements.isEmpty() && statements.get(0) instanceof TryStatement) {
       TryStatement tryStatement = ((TryStatement) statements.get(0));
       if (tryStatement.getBody() != null) {
-        statements = tryStatement.getBody().statements(); // safe by definition
+        statements = ASTUtil.getStatements(tryStatement.getBody());
       }
     }
     AST ast = method.getAST();
@@ -197,7 +193,7 @@ public class DestructorGenerator extends ErrorReportingASTVisitor {
         SimpleName receiver = ast.newSimpleName(field.getName());
         Types.addBinding(receiver, field);
         assign.setLeftHandSide(receiver);
-        assign.setRightHandSide(Types.newNullLiteral());
+        assign.setRightHandSide(ASTFactory.newNullLiteral(ast));
         Types.addBinding(assign, field.getDeclaringClass());
         ExpressionStatement stmt = ast.newExpressionStatement(assign);
         statements.add(index, stmt);
@@ -206,8 +202,9 @@ public class DestructorGenerator extends ErrorReportingASTVisitor {
     if (Options.useReferenceCounting() && !hasSuperFinalize[0]) {
       SuperMethodInvocation call = ast.newSuperMethodInvocation();
       IMethodBinding methodBinding = Types.getMethodBinding(method);
-      GeneratedMethodBinding binding = new GeneratedMethodBinding(destructorName, Modifier.PUBLIC,
-        Types.mapTypeName("void"), methodBinding.getDeclaringClass(), false, false, true);
+      GeneratedMethodBinding binding = GeneratedMethodBinding.newMethod(
+          destructorName, Modifier.PUBLIC, Types.mapTypeName("void"),
+          methodBinding.getDeclaringClass());
       Types.addBinding(call, binding);
       call.setName(ast.newSimpleName(destructorName));
       Types.addBinding(call.getName(), binding);
@@ -219,15 +216,13 @@ public class DestructorGenerator extends ErrorReportingASTVisitor {
   private MethodDeclaration buildFinalizeMethod(AST ast, ITypeBinding declaringClass,
         List<IVariableBinding> fields) {
     ITypeBinding voidType = Types.mapTypeName("void");
-    GeneratedMethodBinding binding = new GeneratedMethodBinding(destructorName, Modifier.PUBLIC,
-      voidType, declaringClass, false, false, true);
+    GeneratedMethodBinding binding = GeneratedMethodBinding.newMethod(
+        destructorName, Modifier.PUBLIC, voidType, declaringClass);
     MethodDeclaration method = ast.newMethodDeclaration();
     Types.addBinding(method, binding);
     method.setName(ast.newSimpleName(destructorName));
     Types.addBinding(method.getName(), binding);
-    @SuppressWarnings("unchecked")
-    List<Modifier> modifiers = method.modifiers();
-    modifiers.add(ast.newModifier(ModifierKeyword.PUBLIC_KEYWORD));
+    ASTUtil.getModifiers(method).add(ast.newModifier(ModifierKeyword.PUBLIC_KEYWORD));
     method.setBody(ast.newBlock());
     addReleaseStatements(method, fields);
     Type returnType = ast.newPrimitiveType(PrimitiveType.VOID);

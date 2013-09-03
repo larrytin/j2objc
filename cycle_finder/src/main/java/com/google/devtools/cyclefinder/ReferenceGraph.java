@@ -21,6 +21,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Multimap;
 import com.google.common.collect.SetMultimap;
 import com.google.common.collect.Sets;
+import com.google.devtools.j2objc.translate.OuterReferenceResolver;
 
 import org.eclipse.jdt.core.dom.IAnnotationBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
@@ -40,7 +41,6 @@ import java.util.Set;
  */
 public class ReferenceGraph {
 
-  private final TypeCollector typeCollector;
   private final Map<String, ITypeBinding> allTypes;
   private final Whitelist whitelist;
   private SetMultimap<String, Edge> edges = HashMultimap.create();
@@ -48,7 +48,6 @@ public class ReferenceGraph {
 
   public ReferenceGraph(TypeCollector typeCollector, Whitelist whitelist) {
     this.allTypes = typeCollector.getTypes();
-    this.typeCollector = typeCollector;
     this.whitelist = whitelist;
   }
 
@@ -63,29 +62,17 @@ public class ReferenceGraph {
     addSubtypeEdges();
     addSuperclassEdges();
     addOuterClassEdges();
+    // TODO(user): Capture edges should be added before subtype edges.
     addAnonymousClassCaptureEdges();
-    removeWhitelistedTypes();
-  }
-
-  private void removeWhitelistedTypes() {
-    for (ITypeBinding type : allTypes.values()) {
-      if (whitelist.containsType(type)) {
-        edges.removeAll(type.getKey());
-      }
-    }
   }
 
   private void addFieldEdges() {
     for (ITypeBinding type : allTypes.values()) {
       for (IVariableBinding field : type.getDeclaredFields()) {
-        if (whitelist.containsField(field)) {
-          continue;
-        }
-        ITypeBinding fieldType = field.getType();
-        if (fieldType.isArray()) {
-          fieldType = fieldType.getElementType();
-        }
-        if (!fieldType.isPrimitive()
+        ITypeBinding fieldType = getElementType(field.getType());
+        if (!whitelist.containsField(field)
+            && !whitelist.containsType(fieldType)
+            && !fieldType.isPrimitive()
             && !Modifier.isStatic(field.getModifiers())
             // Exclude self-referential fields. (likely linked DS or delegate pattern)
             && !type.isAssignmentCompatible(fieldType)
@@ -94,6 +81,13 @@ public class ReferenceGraph {
         }
       }
     }
+  }
+
+  private ITypeBinding getElementType(ITypeBinding type) {
+    if (type.isArray()) {
+      return type.getElementType();
+    }
+    return type;
   }
 
   private boolean hasWildcard(ITypeBinding type) {
@@ -137,12 +131,13 @@ public class ReferenceGraph {
         Set<String> targetSubtypes = subtypes.get(e.getTarget().getKey());
         Set<String> whitelistKeys = Sets.newHashSet();
         IVariableBinding field = e.getField();
-        if (field != null && whitelist.hasWhitelistedTypesForField(field)) {
-          for (String subtype : targetSubtypes) {
-            if (whitelist.isWhitelistedTypeForField(field, allTypes.get(subtype))) {
-              whitelistKeys.add(subtype);
-              whitelistKeys.addAll(subtypes.get(subtype));
-            }
+        for (String subtype : targetSubtypes) {
+          ITypeBinding subtypeBinding = allTypes.get(subtype);
+          if ((field != null && field.isField()
+               && whitelist.isWhitelistedTypeForField(field, subtypeBinding))
+              || whitelist.containsType(subtypeBinding)) {
+            whitelistKeys.add(subtype);
+            whitelistKeys.addAll(subtypes.get(subtype));
           }
         }
         for (String subtype : Sets.difference(targetSubtypes, whitelistKeys)) {
@@ -181,11 +176,10 @@ public class ReferenceGraph {
 
   private void addOuterClassEdges() {
     for (ITypeBinding type : allTypes.values()) {
-      if ((type.isMember() || type.isLocal()) && !Modifier.isStatic(type.getModifiers())
-          && !typeCollector.isStaticAnonymousClass(type.getKey()) && !type.isInterface()
+      if (OuterReferenceResolver.needsOuterReference(type.getTypeDeclaration())
           && !isWeakOuter(type)) {
         ITypeBinding declaringType = type.getDeclaringClass();
-        if (declaringType != null) {
+        if (declaringType != null && !whitelist.containsType(declaringType)) {
           edges.put(type.getKey(), Edge.newOuterClassEdge(type, declaringType));
         }
       }
@@ -195,8 +189,12 @@ public class ReferenceGraph {
   private void addAnonymousClassCaptureEdges() {
     for (ITypeBinding type : allTypes.values()) {
       if (type.isAnonymous()) {
-        for (IVariableBinding capturedVar : typeCollector.getCaptures(type.getKey())) {
-          edges.put(type.getKey(), Edge.newCaptureEdge(type, capturedVar));
+        for (IVariableBinding capturedVar :
+             OuterReferenceResolver.getCapturedVars(type.getTypeDeclaration())) {
+          ITypeBinding targetType = getElementType(capturedVar.getType());
+          if (!targetType.isPrimitive() && !whitelist.containsType(targetType)) {
+            edges.put(type.getKey(), Edge.newCaptureEdge(type, capturedVar));
+          }
         }
       }
     }

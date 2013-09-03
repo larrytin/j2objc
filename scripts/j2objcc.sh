@@ -28,17 +28,22 @@ else
   readonly DIR=$(dirname "$0")
 fi
 
-if [ -d ${DIR}/include ]; then
+if [ "x${PUBLIC_HEADERS_FOLDER_PATH}" != "x" ]; then
+	readonly INCLUDE_PATH=${DIR}/${PUBLIC_HEADERS_FOLDER_PATH}
+elif [ -d ${DIR}/include ]; then
   readonly INCLUDE_PATH=${DIR}/include
 else
+	# Xcode 4 default for new projects.
   readonly INCLUDE_PATH=${DIR}/Headers
 fi
 readonly LIB_PATH=${DIR}/lib
 
 declare CC_FLAGS="-Werror -Wno-parentheses"
 declare OBJC=-ObjC
-declare LIBS="-ljre_emul -licucore -lstdc++"
-declare LINK_FLAGS="${LIBS} -framework Foundation -framework ExceptionHandling -L ${LIB_PATH}"
+declare LIBS="-ljre_emul -l j2objc_main"
+declare FRAMEWORKS="-framework Foundation -framework ExceptionHandling"
+declare LOAD_FLAGS="-force_load ${LIB_PATH}/libjre_emul.a"
+declare LINK_FLAGS="${LIBS} ${FRAMEWORKS} -L ${LIB_PATH} ${LOAD_FLAGS}"
 
 for arg; do
   case $arg in

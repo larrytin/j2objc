@@ -58,8 +58,8 @@
   return name_;
 }
 
-- (IOSClass *)getSuperclass {
-  return nil;
+- (BOOL)isAssignableFrom:(IOSClass *)cls {
+  return [self isEqual:cls];
 }
 
 - (BOOL)isInstance:(id)object {
@@ -112,31 +112,8 @@ getConstructorWithClasses:(IOSClass *)firstClass, ... {
   return nil;
 }
 
-- (id)newInstance {
-  id exception = [[JavaLangInstantiationException alloc] init];
-#if ! __has_feature(objc_arc)
-  [exception autorelease];
-#endif
-  @throw exception;
-  return nil;
-}
-
-- (id)initWithProtocol:(Protocol *)protocol {
-  id exception = [[JavaLangAssertionError alloc] init];
-#if ! __has_feature(objc_arc)
-  [exception autorelease];
-#endif
-  @throw exception;
-  return nil;
-}
-
-- (id)classWithProtocol:(Protocol *)protocol {
-  id exception = [[JavaLangAssertionError alloc] init];
-#if ! __has_feature(objc_arc)
-  [exception autorelease];
-#endif
-  @throw exception;
-  return nil;
+- (BOOL)isPrimitive {
+  return YES;
 }
 
 // isEqual and hash are uniquely identified by their name.

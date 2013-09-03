@@ -47,9 +47,9 @@ public class ThreadLocal<T> {
     setNative(value);
   }
 
-  private native T getNative() /*-{
+  private native T getNative() /*-[
     NSMutableDictionary *dict = [[NSThread currentThread] threadDictionary];
-    id value = [dict objectForKey:self.key];
+    id value = [dict objectForKey:key_];
     if (value != nil) {
       // NSNull indicates that the value was explicitly set to null.
       return value == [NSNull null] ? nil : value;
@@ -57,21 +57,21 @@ public class ThreadLocal<T> {
 
     id initialValue = [self initialValue];
     if (initialValue) {
-      [dict setObject:initialValue forKey:self.key];
+      [dict setObject:initialValue forKey:key_];
     } // else return nil to show this key's value hasn't been set.
     return initialValue;
-  }-*/;
+  ]-*/;
 
-  private native void removeNative() /*-{
-    [[[NSThread currentThread] threadDictionary] removeObjectForKey:self.key];
-  }-*/;
+  private native void removeNative() /*-[
+    [[[NSThread currentThread] threadDictionary] removeObjectForKey:key_];
+  ]-*/;
 
-  private native void setNative(T value) /*-{
+  private native void setNative(T value) /*-[
     if (!value) {
       // Use NSNull singleton to show this value was explicitly set to null,
       // not just undefined.
       value = [NSNull null];
     }
-    [[[NSThread currentThread] threadDictionary] setObject:value forKey:self.key];
-  }-*/;
+    [[[NSThread currentThread] threadDictionary] setObject:value forKey:key_];
+  ]-*/;
 }

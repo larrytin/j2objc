@@ -23,19 +23,34 @@
 #import "IOSClass.h"
 #import "IOSObjectArray.h"
 #import "java/lang/NoSuchMethodException.h"
+#import "java/lang/reflect/Method.h"
 #import "java/lang/reflect/Modifier.h"
+#import "java/lang/reflect/TypeVariable.h"
+#import "objc/runtime.h"
 
 @implementation ExecutableMember
 
 - (id)initWithSelector:(SEL)aSelector withClass:(IOSClass *)aClass {
   if ((self = [super init])) {
     selector_ = aSelector;
-    class_ = aClass.objcClass;
-    classMethod_ = ![class_ instancesRespondToSelector:selector_];
-    if (classMethod_) {
-      methodSignature_ = [class_ methodSignatureForSelector:selector_];
+    class_ = aClass;
+    if (class_.objcClass) {
+      classMethod_ = ![class_.objcClass instancesRespondToSelector:selector_];
+      if (classMethod_) {
+        methodSignature_ =
+            [class_.objcClass methodSignatureForSelector:selector_];
+      } else {
+        methodSignature_ =
+            [class_.objcClass instanceMethodSignatureForSelector:selector_];
+      }
     } else {
-      methodSignature_ = [class_ instanceMethodSignatureForSelector:selector_];
+      assert (class_.objcProtocol);
+      struct objc_method_description methodDesc =
+        protocol_getMethodDescription(class_.objcProtocol, aSelector, YES, YES);
+      if (methodDesc.name && methodDesc.types) {  // If method exists ...
+        methodSignature_ =
+            [NSMethodSignature signatureWithObjCTypes:methodDesc.types];
+      }
     }
     if (methodSignature_ == nil) {
       id exception =
@@ -48,6 +63,13 @@
     }
   }
   return self;
+}
+
+
+- (NSString *)getName {
+  // can't call an abstract method
+  [self doesNotRecognizeSelector:_cmd];
+  return nil;
 }
 
 - (int)getModifiers {
@@ -68,10 +90,10 @@
   [parameters autorelease];
 #endif
 
-  for (NSUInteger i = 0; i < nArgs; i++) { 
-    const char *argType = 
+  for (NSUInteger i = 0; i < nArgs; i++) {
+    const char *argType =
         [methodSignature_ getArgumentTypeAtIndex:i + SKIPPED_ARGUMENTS];
-    IOSClass *paramType = decodeTypeEncoding(*argType);
+    IOSClass *paramType = decodeTypeEncoding(argType);
     [parameters replaceObjectAtIndex:i withObject:paramType];
   }
   return parameters;
@@ -79,7 +101,64 @@
 
 // Returns the class this executable is a member of.
 - (IOSClass *)getDeclaringClass {
-  return [IOSClass classWithClass:class_];
+  return class_;
+}
+
+- (IOSObjectArray *)getTypeParameters {
+  IOSClass *typeVariableType = [IOSClass classWithProtocol:@protocol(JavaLangReflectTypeVariable)];
+  return[IOSObjectArray arrayWithLength:0 type:typeVariableType];
+}
+
+
+- (IOSObjectArray *)getGenericParameterTypes {
+  return [self getParameterTypes];
+}
+
+- (BOOL)isSynthetic {
+  return NO;
+}
+
+- (IOSObjectArray *)getExceptionTypes {
+  JavaLangReflectMethod *method = [self getExceptionsAccessor:[self getName]];
+  if (method) {
+    IOSObjectArray *noArgs = [IOSObjectArray arrayWithLength:0 type:[NSObject getClass]];
+    return (IOSObjectArray *) [method invokeWithId:nil withNSObjectArray:noArgs];
+  } else {
+    return [IOSObjectArray arrayWithLength:0 type:[IOSClass getClass]];
+  }
+}
+
+- (IOSObjectArray *)getParameterAnnotations {
+  // can't call an abstract method
+  [self doesNotRecognizeSelector:_cmd];
+  return nil;
+}
+
+static JavaLangReflectMethod *getAccessor(IOSClass *class, NSString *method, NSString *accessor) {
+  NSString *accessorMethod = [NSString stringWithFormat:@"__%@_%@", accessor,
+     [method stringByReplacingOccurrencesOfString:@":" withString:@"_"]];
+  IOSObjectArray *methods = [class getDeclaredMethods];
+  NSUInteger n = [methods count];
+  for (NSUInteger i = 0; i < n; i++) {
+    JavaLangReflectMethod *method = [methods objectAtIndex:i];
+    if ([accessorMethod isEqualToString:[method getName]] &&
+        [[method getParameterTypes] count] == 0) {
+      return method;
+    }
+  }
+  return nil;  // No accessor for this member.
+}
+
+- (JavaLangReflectMethod *)getAnnotationsAccessor:(NSString *)methodName {
+  return getAccessor(class_, methodName, @"annotations");
+}
+
+- (JavaLangReflectMethod *)getExceptionsAccessor:(NSString *)methodName {
+  return getAccessor(class_, methodName, @"exceptions");
+}
+
+- (JavaLangReflectMethod *)getParameterAnnotationsAccessor:(NSString *)methodName {
+  return [self getAnnotationsAccessor:[NSString stringWithFormat:@"%@_params", methodName]];
 }
 
 @end

@@ -12,6 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Set minimum iOS requirement if compiled on Xcode5.
+#ifdef SET_MIN_IOS_VERSION
+#ifndef __IPHONE_5_0
+  #define __IPHONE_5_0 50000
+#endif
+
+#if (!defined(__IPHONE_OS_VERSION_MIN_REQUIRED) || \
+    __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_5_0)
+#undef __IPHONE_OS_VERSION_MIN_REQUIRED
+#define __IPHONE_OS_VERSION_MIN_REQUIRED __IPHONE_5_0
+#endif
+#endif
+
 #import "JreMemDebug.h"
 
 #import "NSObject+JavaObject.h"
@@ -40,6 +53,9 @@ FOUNDATION_EXPORT void JreMemDebugMarkAllocations(void) {
   NSLog(@"J2Objc MemDebug: Not implemented when ARC is enabled.");
 }
 FOUNDATION_EXPORT void JreMemDebugShowAllocations(void) {
+  NSLog(@"J2Objc MemDebug: Not implemented when ARC is enabled.");
+}
+FOUNDATION_EXPORT void JreMemDebugGenerateAllocationsReport(void) {
   NSLog(@"J2Objc MemDebug: Not implemented when ARC is enabled.");
 }
 #else

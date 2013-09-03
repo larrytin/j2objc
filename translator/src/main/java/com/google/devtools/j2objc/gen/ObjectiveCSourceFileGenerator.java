@@ -17,9 +17,13 @@
 package com.google.devtools.j2objc.gen;
 
 import com.google.common.collect.Lists;
+import com.google.devtools.j2objc.Options;
 import com.google.devtools.j2objc.types.IOSMethod;
+import com.google.devtools.j2objc.types.IOSMethodBinding;
 import com.google.devtools.j2objc.types.IOSParameter;
 import com.google.devtools.j2objc.types.Types;
+import com.google.devtools.j2objc.util.ASTUtil;
+import com.google.devtools.j2objc.util.BindingUtil;
 import com.google.devtools.j2objc.util.NameTable;
 
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
@@ -33,7 +37,6 @@ import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
-import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
@@ -108,13 +111,11 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
     List<IVariableBinding> bindings = Lists.newArrayList();
     for (FieldDeclaration f : fields) {
       if (Modifier.isStatic(f.getModifiers()) || isInterface) {
-        @SuppressWarnings("unchecked")
-        List<VariableDeclarationFragment> fragments = f.fragments(); // safe by specification
-        for (VariableDeclarationFragment var : fragments) {
+        for (VariableDeclarationFragment var : ASTUtil.getFragments(f)) {
           IVariableBinding binding = Types.getVariableBinding(var);
           // Don't define accessors for private constants, since they can be
           // directly referenced.
-          if (!(Types.isPrimitiveConstant(binding) && Modifier.isPrivate(binding.getModifiers()))) {
+          if (!(BindingUtil.isPrimitiveConstant(binding) && BindingUtil.isPrivate(binding))) {
             bindings.add(binding);
           }
         }
@@ -147,7 +148,7 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
   }
 
   protected String staticFieldGetterSignature(IVariableBinding var) {
-    String objcType = NameTable.javaRefToObjC(var.getType());
+    String objcType = NameTable.getObjCType(var.getType());
     String accessorName = NameTable.getStaticAccessorName(var.getName());
     return String.format("+ (%s)%s", objcType, accessorName);
   }
@@ -157,7 +158,7 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
   }
 
   protected String staticFieldReferenceGetterSignature(IVariableBinding var) {
-    String objcType = NameTable.javaRefToObjC(var.getType());
+    String objcType = NameTable.getObjCType(var.getType());
     String accessorName = NameTable.getStaticAccessorName(var.getName());
     return String.format("+ (%s *)%sRef", objcType, accessorName);
   }
@@ -167,7 +168,7 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
   }
 
   protected String staticFieldSetterSignature(IVariableBinding var) {
-    String objcType = NameTable.javaRefToObjC(var.getType());
+    String objcType = NameTable.getObjCType(var.getType());
     String paramName = NameTable.getName(var);
     return String.format("+ (void)set%s:(%s)%s", NameTable.capitalize(var.getName()), objcType,
                          paramName);
@@ -180,7 +181,7 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
     for (MethodDeclaration m : methods) {
       syncLineNumbers(m.getName());  // avoid doc-comment
       IMethodBinding binding = Types.getMethodBinding(m);
-      IOSMethod iosMethod = Types.getMappedMethod(binding);
+      IOSMethod iosMethod = IOSMethodBinding.getIOSMethod(binding);
       if (iosMethod != null) {
         print(mappedMethodDeclaration(m, iosMethod));
       } else if (m.isConstructor()) {
@@ -188,7 +189,7 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
       } else if (Modifier.isStatic(m.getModifiers()) &&
           NameTable.CLINIT_NAME.equals(m.getName().getIdentifier())) {
         printStaticConstructorDeclaration(m);
-      } else if (!isMainMethod(m)) {
+      } else {
         printMethod(m);
       }
     }
@@ -204,22 +205,22 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
    */
   protected String mappedMethodDeclaration(MethodDeclaration method, IOSMethod mappedMethod) {
     StringBuffer sb = new StringBuffer();
-    boolean isStatic = (method.getModifiers() & Modifier.STATIC) > 0;
 
     // Explicitly test hashCode() because of NSObject's hash return value.
     String baseDeclaration;
     if (mappedMethod.getName().equals("hash")) {
       baseDeclaration = "- (NSUInteger)hash";
     } else {
-      baseDeclaration = String.format("%c (%s)%s", isStatic ? '+' : '-',
-          NameTable.javaRefToObjC(method.getReturnType2()), mappedMethod.getName());
+      baseDeclaration = String.format("%c (%s)%s",
+          Modifier.isStatic(method.getModifiers()) ? '+' : '-',
+          NameTable.getObjCType(Types.getTypeBinding(method.getReturnType2())),
+          mappedMethod.getName());
     }
 
     sb.append(baseDeclaration);
     Iterator<IOSParameter> iosParameters = mappedMethod.getParameters().iterator();
     if (iosParameters.hasNext()) {
-      @SuppressWarnings("unchecked")
-      List<SingleVariableDeclaration> parameters = method.parameters();
+      List<SingleVariableDeclaration> parameters = ASTUtil.getParameters(method);
       IOSParameter first = iosParameters.next();
       SingleVariableDeclaration var = parameters.get(first.getIndex());
       addTypeAndName(first, var, sb);
@@ -252,24 +253,10 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
     IMethodBinding binding = Types.getMethodBinding(m);
     String methodName = NameTable.getName(binding);
     String baseDeclaration = String.format("%c (%s)%s", isStatic ? '+' : '-',
-        NameTable.javaRefToObjC(m.getReturnType2()), methodName);
+        NameTable.getObjCType(binding.getReturnType()), methodName);
     sb.append(baseDeclaration);
-    @SuppressWarnings("unchecked")
-    List<SingleVariableDeclaration> params = m.parameters(); // safe by definition
-    parametersDeclaration(Types.getOriginalMethodBinding(binding), params, baseDeclaration, sb);
-    if (methodName.startsWith("new") || methodName.startsWith("copy")
-     || methodName.startsWith("alloc") || methodName.startsWith("init")) {
-      // Getting around a clang warning.
-      // clang assumes that methods with names starting with new, alloc or copy
-      // return objects of the same type as the receiving class, regardless of
-      // the actual declared return type. This attribute tells clang to not do
-      // that, please.
-      // See http://clang.llvm.org/docs/AutomaticReferenceCounting.html
-      // Sections 5.1 (Explicit method family control)
-      // and 5.2.2 (Related result types)
-      // TODO(user,user): Rename method instead of using the attribute.
-      sb.append(" OBJC_METHOD_FAMILY_NONE");
-    }
+    parametersDeclaration(BindingUtil.getOriginalMethodBinding(binding), ASTUtil.getParameters(m),
+        baseDeclaration, sb);
     return sb.toString();
   }
 
@@ -289,9 +276,32 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
       baseDeclaration += NameTable.getFullName(binding.getDeclaringClass());
     }
     sb.append(baseDeclaration);
-    @SuppressWarnings("unchecked")
-    List<SingleVariableDeclaration> params = m.parameters(); // safe by definition
-    parametersDeclaration(binding, params, baseDeclaration, sb);
+    parametersDeclaration(binding, ASTUtil.getParameters(m), baseDeclaration, sb);
+    return sb.toString();
+  }
+
+  /**
+   * Create an Objective-C constructor from a list of annotation member
+   * declarations.
+   */
+  protected String annotationConstructorDeclaration(ITypeBinding annotation) {
+    StringBuffer sb = new StringBuffer();
+    sb.append("- (id)init");
+    IMethodBinding[] members = BindingUtil.getSortedAnnotationMembers(annotation);
+    for (int i = 0; i < members.length; i++) {
+      if (i == 0) {
+        sb.append("With");
+      } else {
+        sb.append(" with");
+      }
+      IMethodBinding member = members[i];
+      sb.append(NameTable.capitalize(member.getName()));
+      sb.append(":(");
+      sb.append(NameTable.getSpecificObjCType(member.getReturnType()));
+      sb.append(')');
+      sb.append(member.getName());
+      sb.append('_');
+    }
     return sb.toString();
   }
 
@@ -313,9 +323,7 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
           fieldName = "";
         }
         ITypeBinding typeBinding = parameterTypes[i];
-        boolean isTypeVariable = typeBinding.isTypeVariable();
-        String keyword = isTypeVariable ? parameterKeyword(NameTable.ID_TYPE, typeBinding)
-            : parameterKeyword(param.getType(), typeBinding);
+        String keyword = NameTable.parameterKeyword(typeBinding);
         if (first) {
           sb.append(NameTable.capitalize(keyword));
           baseDeclaration += keyword;
@@ -324,7 +332,8 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
           sb.append(pad(baseDeclaration.length() - keyword.length()));
           sb.append(keyword);
         }
-        sb.append(String.format(":(%s)%s", NameTable.javaRefToObjC(param.getType()), fieldName));
+        sb.append(String.format(":(%s)%s",
+            NameTable.getSpecificObjCType(Types.getTypeBinding(param)), fieldName));
         if (i + 1 < nParams) {
           sb.append('\n');
         }
@@ -333,17 +342,17 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
     if (method.isConstructor() && method.getDeclaringClass().isEnum()) {
       // If enum constant type, append name and ordinal.
       if (params.isEmpty()) {
-        sb.append("WithNSString:(NSString *)name withInt:(int)ordinal");
+        sb.append("WithNSString:(NSString *)__name withInt:(int)__ordinal");
       } else {
         sb.append('\n');
         String keyword = "withNSString";
         sb.append(pad(baseDeclaration.length() - keyword.length()));
         sb.append(keyword);
-        sb.append(":(NSString *)name\n");
+        sb.append(":(NSString *)__name\n");
         keyword = "withInt";
         sb.append(pad(baseDeclaration.length() - keyword.length()));
         sb.append(keyword);
-        sb.append(":(int)ordinal");
+        sb.append(":(int)__ordinal");
       }
     }
   }
@@ -356,114 +365,20 @@ public abstract class ObjectiveCSourceFileGenerator extends SourceFileGenerator 
     return name;
   }
 
-  private String parameterKeyword(Type type, ITypeBinding typeBinding) {
-    String typeName = NameTable.javaTypeToObjC(type, true);
-    return parameterKeyword(typeName, typeBinding);
-  }
-
-  /**
-   * Returns a parameter name, which consists of a prefix ("with") and
-   * a type name that doesn't conflict with core names.  For example,
-   * "Foo" returns "withFoo", "Long" returns "withLong", and "long"
-   * returns "withLongInt", so as not to conflict with the previous
-   * example.
-   *
-   * For array types, the name returned is the type of the array's
-   * element followed by "Array".
+  /** Ignores deprecation warnings. Deprecation warnings should be visible for human authored code,
+   *  not transpiled code. This method should be paired with popIgnoreDeprecatedDeclarationsPragma.
    */
-  public static String parameterKeyword(String typeName, ITypeBinding typeBinding) {
-    return "with" + NameTable.capitalize(NameTable.getParameterTypeName(typeName, typeBinding));
+  protected void pushIgnoreDeprecatedDeclarationsPragma() {
+    if (Options.generateDeprecatedDeclarations()) {
+      printf("#pragma clang diagnostic push\n");
+      printf("#pragma GCC diagnostic ignored \"-Wdeprecated-declarations\"\n");
+    }
   }
 
-  /**
-   * Returns true if the specified method declaration is for a Java main
-   */
-  protected boolean isMainMethod(MethodDeclaration m) {
-    int modifiers = m.getModifiers();
-    if (Modifier.isPublic(modifiers) && Modifier.isStatic(modifiers)) {
-      if (m.getName().getIdentifier().equals("main")) {
-        List<?> args = m.parameters();
-        if (args.size() == 1) {
-          SingleVariableDeclaration var = (SingleVariableDeclaration) args.get(0);
-
-          // Use original binding, since we can't tell if it's a String
-          // array after translation, since IOSObjectArray just holds objects.
-          ITypeBinding type = var.resolveBinding().getType();
-          ITypeBinding stringType = m.getAST().resolveWellKnownType("java.lang.String");
-          return type.isArray() && type.getComponentType().isEqualTo(stringType);
-        }
-      }
+  /** Restores deprecation warnings after a call to pushIgnoreDeprecatedDeclarationsPragma. */
+  protected void popIgnoreDeprecatedDeclarationsPragma() {
+    if (Options.generateDeprecatedDeclarations()) {
+      printf("#pragma clang diagnostic pop\n");
     }
-    return false;
-  }
-
-  /**
-   * Returns a function declaration string from a specified class and method.
-   */
-  protected String makeFunctionDeclaration(AbstractTypeDeclaration cls,
-      MethodDeclaration method) {
-    StringBuffer sb = new StringBuffer();
-    Type returnType = method.getReturnType2();
-    ITypeBinding binding = Types.getTypeBinding(returnType);
-    if (binding.isEnum()) {
-      sb.append(NameTable.javaTypeToObjC(returnType, true));
-    } else {
-      sb.append(NameTable.javaRefToObjC(returnType));
-    }
-    sb.append(' ');
-    sb.append(NameTable.makeFunctionName(cls, method));
-    sb.append('(');
-    for (Iterator<?> iterator = method.parameters().iterator(); iterator.hasNext(); ) {
-      Object o = iterator.next();
-      if (o instanceof SingleVariableDeclaration) {
-        SingleVariableDeclaration param = (SingleVariableDeclaration) o;
-        String fieldType = NameTable.javaRefToObjC(param.getType());
-        String fieldName = param.getName().getIdentifier();
-        sb.append(String.format("%s %s", fieldType, fieldName));
-        if (iterator.hasNext()) {
-          sb.append(", ");
-        }
-      }
-    }
-    sb.append(')');
-    return sb.toString();
-  }
-
-  /**
-   * Returns true if a superclass also defines this variable.
-   */
-  protected boolean superDefinesVariable(VariableDeclarationFragment var) {
-    IVariableBinding varBinding = Types.getVariableBinding(var);
-    ITypeBinding declaringClassBinding = varBinding.getDeclaringClass();
-    TypeDeclaration declaringClass =
-        Types.getTypeDeclaration(declaringClassBinding, getUnit().types());
-    if (declaringClass == null) {
-      return false;
-    }
-    String name = var.getName().getIdentifier();
-    ITypeBinding type = varBinding.getType();
-    return superDefinesVariable(declaringClass, name, type);
-  }
-
-  private boolean superDefinesVariable(TypeDeclaration declaringClass, String name,
-      ITypeBinding type) {
-    ITypeBinding superClazzBinding = Types.getTypeBinding(declaringClass.getSuperclassType());
-    TypeDeclaration superClazz = Types.getTypeDeclaration(superClazzBinding, getUnit().types());
-    if (superClazz == null) {
-      return false;
-    }
-    for (FieldDeclaration field : superClazz.getFields()) {
-      @SuppressWarnings("unchecked")
-      List<VariableDeclarationFragment> vars = field.fragments(); // safe by definition
-      for (VariableDeclarationFragment var : vars) {
-        if (var.getName().getIdentifier().equals(name)) {
-          ITypeBinding varType = Types.getTypeBinding(var);
-          if (varType.isEqualTo(type)) {
-            return true;
-          }
-        }
-      }
-    }
-    return superDefinesVariable(superClazz, name, type);
   }
 }

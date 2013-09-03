@@ -42,6 +42,7 @@ import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Modifier.ModifierKeyword;
+import org.eclipse.jdt.core.dom.NullLiteral;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
 import org.eclipse.jdt.core.dom.Type;
@@ -93,7 +94,6 @@ public class AnonymousClassConverter extends ErrorReportingASTVisitor {
    * to scan their containing nodes for references.
    */
   @Override
-  @SuppressWarnings("unchecked")
   public void endVisit(AnonymousClassDeclaration node) {
     ITypeBinding typeBinding = Types.getTypeBinding(node);
     ITypeBinding outerType = typeBinding.getDeclaringClass();
@@ -109,12 +109,12 @@ public class AnonymousClassConverter extends ErrorReportingASTVisitor {
         newClassName, outerType, typeBinding, modifiers);
     if (parent instanceof ClassInstanceCreation) {
       newInvocation = (ClassInstanceCreation) parent;
-      parentArguments = newInvocation.arguments();
+      parentArguments = ASTUtil.getArguments(newInvocation);
       outerExpression = newInvocation.getExpression();
       newInvocation.setExpression(null);
     } else if (parent instanceof EnumConstantDeclaration) {
       enumConstant = (EnumConstantDeclaration) parent;
-      parentArguments = enumConstant.arguments();
+      parentArguments = ASTUtil.getArguments(enumConstant);
     } else {
       throw new AssertionError(
           "unknown anonymous class declaration parent: " + parent.getClass().getName());
@@ -124,22 +124,23 @@ public class AnonymousClassConverter extends ErrorReportingASTVisitor {
     AST ast = node.getAST();
     TypeDeclaration typeDecl = ast.newTypeDeclaration();
     if (isStatic) {
-      typeDecl.modifiers().add(ast.newModifier(ModifierKeyword.STATIC_KEYWORD));
+      ASTUtil.getModifiers(typeDecl).add(ast.newModifier(ModifierKeyword.STATIC_KEYWORD));
     }
     Types.addBinding(typeDecl, innerType);
     typeDecl.setName(ast.newSimpleName(newClassName));
     Types.addBinding(typeDecl.getName(), innerType);
     typeDecl.setSourceRange(node.getStartPosition(), node.getLength());
 
-    Type superType = Types.makeType(Types.mapType(innerType.getSuperclass()));
+    Type superType = ASTFactory.newType(ast, Types.mapType(innerType.getSuperclass()));
     typeDecl.setSuperclassType(superType);
     for (ITypeBinding interfaceType : innerType.getInterfaces()) {
-      typeDecl.superInterfaceTypes().add(Types.makeType(Types.mapType(interfaceType)));
+      ASTUtil.getSuperInterfaceTypes(typeDecl).add(
+          ASTFactory.newType(ast, Types.mapType(interfaceType)));
     }
 
     for (Object bodyDecl : node.bodyDeclarations()) {
       BodyDeclaration decl = (BodyDeclaration) bodyDecl;
-      typeDecl.bodyDeclarations().add(NodeCopier.copySubtree(ast, decl));
+      ASTUtil.getBodyDeclarations(typeDecl).add(NodeCopier.copySubtree(ast, decl));
     }
 
     // Add inner fields and a default constructor.
@@ -162,11 +163,8 @@ public class AnonymousClassConverter extends ErrorReportingASTVisitor {
     // If invocation, replace anonymous class invocation with the new constructor.
     if (newInvocation != null) {
       newInvocation.setAnonymousClassDeclaration(null);
-      newInvocation.setType(Types.makeType(innerType));
+      newInvocation.setType(ASTFactory.newType(ast, innerType));
       IMethodBinding oldBinding = Types.getMethodBinding(newInvocation);
-      if (oldBinding == null) {
-        oldBinding = newInvocation.resolveConstructorBinding();
-      }
       if (oldBinding != null) {
         GeneratedMethodBinding invocationBinding = new GeneratedMethodBinding(oldBinding);
         invocationBinding.setDeclaringClass(innerType);
@@ -185,12 +183,12 @@ public class AnonymousClassConverter extends ErrorReportingASTVisitor {
       }
       if (n instanceof AnonymousClassDeclaration) {
         AnonymousClassDeclaration outerDecl = (AnonymousClassDeclaration) n;
-        outerDecl.bodyDeclarations().add(typeDecl);
+        ASTUtil.getBodyDeclarations(outerDecl).add(typeDecl);
       }
     } else {
       AbstractTypeDeclaration outerDecl =
           (AbstractTypeDeclaration) unit.findDeclaringNode(outerType);
-      outerDecl.bodyDeclarations().add(typeDecl);
+      ASTUtil.getBodyDeclarations(outerDecl).add(typeDecl);
     }
     OuterReferenceResolver.copyNode(node, typeDecl);
     super.endVisit(node);
@@ -212,8 +210,7 @@ public class AnonymousClassConverter extends ErrorReportingASTVisitor {
     MethodDeclaration constructor = ast.newMethodDeclaration();
     constructor.setConstructor(true);
     ITypeBinding voidType = ast.resolveWellKnownType("void");
-    GeneratedMethodBinding binding = new GeneratedMethodBinding("init", 0,
-        voidType, clazz, true, false, true);
+    GeneratedMethodBinding binding = GeneratedMethodBinding.newConstructor(clazz, 0);
     Types.addBinding(constructor, binding);
     Types.addBinding(constructor.getReturnType2(), voidType);
     SimpleName name = ast.newSimpleName("init");
@@ -244,7 +241,8 @@ public class AnonymousClassConverter extends ErrorReportingASTVisitor {
     // constructor and passed to the super call.
     int argCount = 0;
     for (Expression arg : invocationArguments) {
-      ITypeBinding argType = Types.getTypeBinding(arg);
+      ITypeBinding argType =
+          arg instanceof NullLiteral ? Types.getNSObject() : Types.getTypeBinding(arg);
       GeneratedVariableBinding argBinding = new GeneratedVariableBinding(
           "arg$" + argCount++, 0, argType, false, true, clazz, binding);
       ASTUtil.getParameters(constructor).add(
@@ -265,7 +263,7 @@ public class AnonymousClassConverter extends ErrorReportingASTVisitor {
           binding);
       ASTUtil.getParameters(constructor).add(
           ASTFactory.newSingleVariableDeclaration(ast, paramBinding));
-      binding.addParameter(paramBinding);
+      binding.addParameter(paramBinding.getType());
       ASTUtil.getStatements(constructor.getBody()).add(
           ast.newExpressionStatement(ASTFactory.newAssignment(ast,
           ASTFactory.newSimpleName(ast, innerField), ASTFactory.newSimpleName(ast, paramBinding))));

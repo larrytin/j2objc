@@ -58,7 +58,7 @@ static id makeException(Class exceptionClass) {
 - (id)newInstanceWithNSObjectArray:(IOSObjectArray *)initArgs {
   id newInstance;
   @try {
-    newInstance = [class_ alloc];
+    newInstance = [class_.objcClass alloc];
   }
   @catch (JavaLangThrowable *e) {
     JavaLangThrowable *throwable =
@@ -182,11 +182,19 @@ static id makeException(Class exceptionClass) {
   return newInstance;
 }
 
+// Returns the class name, like java.lang.reflect.Constructor does.
 - (NSString *)getName {
-  const char *cname = class_getName(class_);
-  NSString *name = [NSString stringWithCString:cname
-                                      encoding:NSUTF8StringEncoding];
-  return name;
+  return [class_ getName];
+}
+
+- (IOSObjectArray *)getDeclaredAnnotations {
+  JavaLangReflectMethod *method = [self getAnnotationsAccessor:[self getName]];
+  return [self getAnnotationsFromAccessor:method];
+}
+
+- (IOSObjectArray *)getParameterAnnotations {
+  JavaLangReflectMethod *method = [self getParameterAnnotationsAccessor:[self getName]];
+  return [self getAnnotationsFromAccessor:method];
 }
 
 @end

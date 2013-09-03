@@ -25,29 +25,35 @@ include ../java_deps/jars.mk
 
 INCLUDE_DIR = $(BUILD_DIR)/include
 SOURCE_BASE = src/main
-OBJC_SOURCE_DIR = $(SOURCE_BASE)/native/junit
+OBJC_SOURCE_DIR = $(SOURCE_BASE)/native
 JAVA_SRC_DIR = $(BUILD_DIR)/java
+MODIFIED_JAVA_SRC_DIR = $(SOURCE_BASE)/java
 
 JUNIT_SRC_JAR = $(JAVA_DEPS_JAR_DIR)/$(JUNIT_SOURCE_JAR)
-JUNIT_JAR_FULL = $(JAVA_DEPS_JAR_DIR)/$(JUNIT_JAR)
+HAMCREST_SRC_JAR = $(JAVA_DEPS_JAR_DIR)/$(HAMCREST_SOURCE_JAR)
 
 JUNIT_LIB = $(ARCH_BUILD_DIR)/libjunit.a
-JUNIT_LIB_DIST = $(DIST_LIB_DIR)/libjunit.a
+JUNIT_LIB_DIST = $(ARCH_LIB_DIR)/libjunit.a
+
+RUNNER_LIB = $(ARCH_BUILD_DIR)/libjunit_runner.a
+RUNNER_LIB_DIST = $(ARCH_LIB_DIR)/libjunit_runner.a
 
 # Compiler settings, based on Xcode log output
 WARNINGS = -Wno-trigraphs -Wunused-variable -Werror -Wincompatible-pointer-types
 
 # The -fobjc flags match XCode (a link fails without them because of
 # missing symbols of the form OBJC_CLASS_$_[classname]).
-OBJCFLAGS := -ObjC -std=gnu99 $(WARNINGS) $(SDK_FLAGS) $(ARCH_FLAGS) \
+OBJCFLAGS := -ObjC $(WARNINGS) \
   -fobjc-abi-version=2 -fobjc-legacy-dispatch $(DEBUGFLAGS) \
   -I/System/Library/Frameworks/ExceptionHandling.framework/Headers
 
 # J2ObjC settings
-J2OBJC = $(DIST_DIR)/j2objc -classpath $(JUNIT_JAR_FULL) -d $(BUILD_DIR)
+J2OBJC = $(DIST_DIR)/j2objc -d $(BUILD_DIR)
 J2OBJCC = $(ARCH_BIN_DIR)/j2objcc -c $(OBJCFLAGS) -I$(OBJC_SOURCE_DIR) -I$(BUILD_DIR)
 
-ifdef CLANG_ENABLE_OBJC_ARC
+ifeq ("$(strip $(CLANG_ENABLE_OBJC_ARC))", "YES")
 J2OBJC := $(J2OBJC) -use-arc
-OBJCFLAGS := $(OBJCFLAGS) -fobjc-arc -fobjc-arc-exceptions
+OBJCFLAGS := $(OBJCFLAGS) -fobjc-arc -fobjc-arc-exceptions\
+ -Wno-arc-bridge-casts-disallowed-in-nonarc \
+ -Xclang -fobjc-runtime-has-weak
 endif

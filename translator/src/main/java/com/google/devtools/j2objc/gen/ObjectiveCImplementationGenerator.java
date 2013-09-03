@@ -23,14 +23,18 @@ import com.google.devtools.j2objc.J2ObjC.Language;
 import com.google.devtools.j2objc.Options;
 import com.google.devtools.j2objc.types.IOSMethod;
 import com.google.devtools.j2objc.types.ImplementationImportCollector;
-import com.google.devtools.j2objc.types.ImportCollector;
+import com.google.devtools.j2objc.types.Import;
 import com.google.devtools.j2objc.types.Types;
+import com.google.devtools.j2objc.util.ASTUtil;
+import com.google.devtools.j2objc.util.BindingUtil;
 import com.google.devtools.j2objc.util.ErrorReportingASTVisitor;
 import com.google.devtools.j2objc.util.NameTable;
 
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
+import org.eclipse.jdt.core.dom.Annotation;
 import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
+import org.eclipse.jdt.core.dom.AnnotationTypeMemberDeclaration;
 import org.eclipse.jdt.core.dom.BlockComment;
 import org.eclipse.jdt.core.dom.BodyDeclaration;
 import org.eclipse.jdt.core.dom.Comment;
@@ -40,6 +44,8 @@ import org.eclipse.jdt.core.dom.EnumConstantDeclaration;
 import org.eclipse.jdt.core.dom.EnumDeclaration;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
+import org.eclipse.jdt.core.dom.IAnnotationBinding;
+import org.eclipse.jdt.core.dom.IMemberValuePairBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
@@ -95,6 +101,7 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
       findInvokedConstructors(unit);
       printStart(getSourceFileName());
       printImports(unit);
+      pushIgnoreDeprecatedDeclarationsPragma();
       unit.accept(new ErrorReportingASTVisitor() {
         @Override
         public boolean visit(TypeDeclaration node) {
@@ -107,11 +114,19 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
           generate(node);
           return true;
         }
+
+        @Override
+        public boolean visit(AnnotationTypeDeclaration node) {
+          if (BindingUtil.isRuntimeAnnotation(Types.getTypeBinding(node))) {
+            generate(node);
+          }
+          return true;
+        }
       });
+      popIgnoreDeprecatedDeclarationsPragma();
     } else {
       // Print a dummy C function so compiled object file is valid.
-      @SuppressWarnings("unchecked")
-      List<AbstractTypeDeclaration> types = unit.types(); // safe by definition
+      List<AbstractTypeDeclaration> types = ASTUtil.getTypes(unit);
       if (!types.isEmpty()) {
         printf("void %s_unused() {}\n", NameTable.getFullName(types.get(0)));
       }
@@ -143,17 +158,35 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
 
       @Override
       public boolean visit(AnnotationTypeDeclaration node) {
-        return false;  // never print annotations
+        result[0] = BindingUtil.isRuntimeAnnotation(Types.getTypeBinding(node));
+        return false;
       }
     });
     return result[0];
   }
 
-  private String constructorKey(IMethodBinding constructor) {
+  private String parameterKey(IMethodBinding method) {
     StringBuilder sb = new StringBuilder();
-    for (ITypeBinding type : constructor.getParameterTypes()) {
-      sb.append(NameTable.javaRefToObjC(type) + ":");
+    ITypeBinding[] parameterTypes = method.getParameterTypes();
+    for (int i = 0; i < parameterTypes.length; i++) {
+      if (i == 0) {
+        sb.append(NameTable.capitalize(NameTable.parameterKeyword(parameterTypes[i])));
+      } else {
+        sb.append(NameTable.parameterKeyword(parameterTypes[i]));
+      }
+      sb.append('_');
     }
+    return sb.toString();
+  }
+
+  private String methodKey(IMethodBinding method) {
+    StringBuilder sb = new StringBuilder();
+    if (method.isConstructor()) {
+      sb.append(NameTable.getFullName(method.getDeclaringClass()));
+    } else {
+      sb.append(NameTable.getName(method));
+    }
+    sb.append(parameterKey(method));
     return sb.toString();
   }
 
@@ -161,7 +194,7 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
     unit.accept(new ErrorReportingASTVisitor() {
       @Override
       public boolean visit(ConstructorInvocation node) {
-        invokedConstructors.add(constructorKey(Types.getMethodBinding(node)));
+        invokedConstructors.add(parameterKey(Types.getMethodBinding(node)));
         return false;
       }
     });
@@ -169,10 +202,6 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
 
   @Override
   public void generate(TypeDeclaration node) {
-    List<IMethodBinding> testMethods = null;
-    if (Types.isJUnitTest(Types.getTypeBinding(node))) {
-       testMethods = findTestMethods(node);
-    }
     syncLineNumbers(node.getName()); // avoid doc-comment
 
     String typeName = NameTable.getFullName(node);
@@ -185,48 +214,83 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
       printf("@implementation %s\n\n", typeName);
       printStaticReferencesMethod(fields);
       printStaticVars(fields, /* isInterface */ false);
-      printProperties(fields);
       printStaticFieldAccessors(fields, methods, /* isInterface */ false);
       printMethods(node);
       printObjCTypeMethod(node);
+      if (!Options.stripReflection()) {
+        printTypeAnnotationsMethod(node);
+        printMethodAnnotationMethods(Lists.newArrayList(node.getMethods()));
+        printFieldAnnotationMethods(Lists.newArrayList(node.getFields()));
+      }
 
       println("@end");
-
-      // Generate main method, if declared.
-      MethodDeclaration main = null;
-      for (MethodDeclaration m : methods) {
-        if (isMainMethod(m)) {
-          main = m;
-          break;
-        }
-      }
-      if (main != null || (testMethods != null && Options.generateTestMain())) {
-        newline();
-        printMainMethod(main, typeName, testMethods);
-      }
     }
-  }
-
-  private List<IMethodBinding> findTestMethods(TypeDeclaration node) {
-    ITypeBinding type = Types.getTypeBinding(node);
-    List<IMethodBinding> tests = Lists.newArrayList();
-    while (type != null) {
-      for (IMethodBinding md : type.getDeclaredMethods()) {
-        int modifiers = md.getModifiers();
-        if (Modifier.isPublic(modifiers)) {
-          if (md.getName().startsWith("test") && md.getParameterTypes().length == 0) {
-            tests.add(md);
-          }
-        }
-      }
-      type = type.getSuperclass();
-    }
-    return tests.isEmpty() ? null : tests;
   }
 
   @Override
   protected void generate(AnnotationTypeDeclaration node) {
-    // No implementation for annotations.
+    syncLineNumbers(node.getName()); // avoid doc-comment
+
+    String typeName = NameTable.getFullName(node);
+    printf("@implementation %sImpl\n", typeName);
+    List<AnnotationTypeMemberDeclaration> members = Lists.newArrayList();
+    for (BodyDeclaration decl : ASTUtil.getBodyDeclarations(node)) {
+      if (decl instanceof AnnotationTypeMemberDeclaration) {
+        members.add((AnnotationTypeMemberDeclaration) decl);
+      }
+    }
+    printAnnotationProperties(members);
+    if (!members.isEmpty()) {
+      printAnnotationConstructor(Types.getTypeBinding(node));
+    }
+    printAnnotationAccessors(members);
+    println("- (IOSClass *)annotationType {");
+    printf("  return [IOSClass classWithProtocol:@protocol(%s)];\n", typeName);
+    println("}\n");
+    printTypeAnnotationsMethod(node);
+    println("@end\n");
+  }
+
+  private void printAnnotationConstructor(ITypeBinding annotation) {
+    print(annotationConstructorDeclaration(annotation));
+    println(" {");
+    println("  if ((self = [super init])) {");
+    for (IMethodBinding member : annotation.getDeclaredMethods()) {
+      String name = member.getName();
+      printf("    %s = ", name);
+      ITypeBinding type = member.getReturnType();
+      boolean needsRetain = !type.isPrimitive();
+      if (needsRetain) {
+        print("RETAIN(");
+      }
+      printf("%s_", name);
+      if (needsRetain) {
+        print(')');
+      }
+      println(";");
+    }
+    println("  }");
+    println("  return self;");
+    println("}\n");
+  }
+
+  private void printAnnotationAccessors(List<AnnotationTypeMemberDeclaration> members) {
+    int nPrinted = 0;
+    for (AnnotationTypeMemberDeclaration member : members) {
+      Expression deflt = member.getDefault();
+      if (deflt != null) {
+        ITypeBinding type = Types.getTypeBinding(member.getType());
+        String typeString = NameTable.getSpecificObjCType(type);
+        String propertyName = NameTable.getName(member.getName());
+        printf("+ (%s)%sDefault {\n", typeString, propertyName);
+        printf("  return %s;\n", generateExpression(deflt));
+        println("}\n");
+        nPrinted++;
+      }
+    }
+    if (nPrinted > 0) {
+      newline();
+    }
   }
 
   private void printMethods(TypeDeclaration node) {
@@ -249,13 +313,12 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
       if (primitiveType != null) {
         // All java.lang primitive type wrappers have a "value" field.
         printf("- (void)getValue:(void *)buffer {\n  *((%s *) buffer) = value_;\n}\n\n",
-            NameTable.getFullName(primitiveType));
+            NameTable.primitiveTypeToObjC(primitiveType.getName()));
       }
     }
 
     List<VariableDeclarationFragment> properties = getProperties(node.getFields());
     if (properties.size() > 0) {
-      printCopyAllPropertiesMethod(NameTable.getFullName(node), properties);
       printStrongReferencesMethod(properties);
     }
   }
@@ -264,25 +327,10 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
     List<VariableDeclarationFragment> properties = Lists.newArrayList();
     for (FieldDeclaration field : fields) {
       if (!Modifier.isStatic(field.getModifiers())) {
-        @SuppressWarnings("unchecked")
-        List<VariableDeclarationFragment> fragments = field.fragments(); // safe by definition
-        properties.addAll(fragments);
+        properties.addAll(ASTUtil.getFragments(field));
       }
     }
     return properties;
-  }
-
-  private void printCopyAllPropertiesMethod(
-      String typeName, List<VariableDeclarationFragment> properties) {
-    println("- (void)copyAllPropertiesTo:(id)copy {");
-    println("  [super copyAllPropertiesTo:copy];");
-    println(String.format("  %s *typedCopy = (%s *) copy;", typeName, typeName));
-    for (VariableDeclarationFragment property : properties) {
-      String propName = NameTable.getName(property.getName());
-      String objCFieldName = NameTable.javaFieldToObjC(propName);
-      println(String.format("  typedCopy.%s = %s;", propName, objCFieldName));
-    }
-    println("}\n");
   }
 
   // Returns whether the property is a strong reference.
@@ -345,9 +393,7 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
       println("  NSMutableArray *result = [NSMutableArray array];");
       for (FieldDeclaration f : fields) {
         if (Modifier.isStatic(f.getModifiers())) {
-          @SuppressWarnings("unchecked")
-          List<VariableDeclarationFragment> fragments = f.fragments(); // safe by specification
-          for (VariableDeclarationFragment var : fragments) {
+          for (VariableDeclarationFragment var : ASTUtil.getFragments(f)) {
             IVariableBinding binding = Types.getVariableBinding(var);
             // All non-primitive static variables are strong references.
             if (!binding.getType().isPrimitive()) {
@@ -378,7 +424,7 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
     printStaticVars(fields, /* isInterface */ true);
     printStaticFieldAccessors(staticFields, methods);
     for (MethodDeclaration method : methods) {
-      if (Types.getMethodBinding(method).isSynthetic()) {
+      if (method.getBody() != null) {
         printMethod(method);
       }
     }
@@ -387,14 +433,11 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
 
   @Override
   protected void generate(EnumDeclaration node) {
-    @SuppressWarnings("unchecked")
-    List<EnumConstantDeclaration> constants = node.enumConstants(); // safe by definition
+    List<EnumConstantDeclaration> constants = ASTUtil.getEnumConstants(node);
     List<MethodDeclaration> methods = Lists.newArrayList();
     List<FieldDeclaration> fields = Lists.newArrayList();
     MethodDeclaration initializeMethod = null;
-    @SuppressWarnings("unchecked")
-    List<BodyDeclaration> declarations = node.bodyDeclarations(); // safe by definition
-    for (BodyDeclaration decl : declarations) {
+    for (BodyDeclaration decl : ASTUtil.getBodyDeclarations(node)) {
       if (decl instanceof FieldDeclaration) {
         fields.add((FieldDeclaration) decl);
       } else if (decl instanceof MethodDeclaration) {
@@ -434,15 +477,13 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
     String selfString = Options.useReferenceCounting() ? "[self retain]" : "self";
     printf("- (id)copyWithZone:(NSZone *)zone {\n  return %s;\n}\n\n", selfString);
 
-    printProperties(fields);
     printStaticFieldAccessors(fields, methods, /* isInterface */ false);
     printMethods(methods);
 
     printf("+ (void)initialize {\n  if (self == [%s class]) {\n", typeName);
     for (int i = 0; i < constants.size(); i++) {
       EnumConstantDeclaration constant = constants.get(i);
-      @SuppressWarnings("unchecked")
-      List<Expression> args = constant.arguments(); // safe by definition
+      List<Expression> args = ASTUtil.getArguments(constant);
       String name = NameTable.getName(constant.getName());
       String constantTypeName =
           NameTable.getFullName(Types.getMethodBinding(constant).getDeclaringClass());
@@ -471,9 +512,7 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
     printf("nil } count:%d type:[IOSClass classWithClass:[%s class]]];\n",
         constants.size(), typeName);
     if (initializeMethod != null) {
-      @SuppressWarnings("unchecked")
-      List<Statement> stmts = initializeMethod.getBody().statements(); // safe by definition
-      for (Statement s : stmts) {
+      for (Statement s : ASTUtil.getStatements(initializeMethod.getBody())) {
         printf("    %s", StatementGenerator.generate(s, fieldHiders, false,
             getBuilder().getSourcePosition()));
       }
@@ -500,12 +539,13 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
     printf("  return nil;\n");
     println("}\n");
 
+    printTypeAnnotationsMethod(node);
     println("@end");
   }
 
   @Override
   protected void printStaticFieldGetter(IVariableBinding var) {
-    String name = Types.isPrimitiveConstant(var) ?
+    String name = BindingUtil.isPrimitiveConstant(var) ?
         NameTable.getPrimitiveConstantName(var) :
         NameTable.getStaticVarQualifiedName(var);
     printf("%s {\n  return %s;\n}\n\n", staticFieldGetterSignature(var), name);
@@ -523,7 +563,8 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
     String paramName = NameTable.getName(var);
     String signature = staticFieldSetterSignature(var);
     if (Options.useReferenceCounting()) {
-      printf("%s {\n  JreOperatorRetainedAssign(&%s, %s);\n}\n\n", signature, fieldName, paramName);
+      printf("%s {\n  JreOperatorRetainedAssign(&%s, nil, %s);\n}\n\n",
+          signature, fieldName, paramName);
     } else {
       printf("%s {\n  %s = %s;\n}\n\n", signature, fieldName, paramName);
     }
@@ -533,7 +574,7 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
   protected String methodDeclaration(MethodDeclaration m) {
     int modifiers = m.getModifiers();
     if ((modifiers & Modifier.NATIVE) > 0) {
-      if (hasNativeCode(m)) {
+      if (hasNativeCode(m, true)) {
         return super.methodDeclaration(m) + " " + extractNativeMethodBody(m) + "\n\n";
       } else if (Options.generateNativeStubs()) {
         return super.methodDeclaration(m) + " " + generateNativeStub(m) + "\n\n";
@@ -542,7 +583,33 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
       }
     }
     String methodBody = generateMethodBody(m);
-    return super.methodDeclaration(m) + " " + reindent(methodBody) + "\n\n";
+    return super.methodDeclaration(m) + " " + reindent(methodBody) + "\n\n" +
+        methodExceptionsFunction(m);
+  }
+
+  protected String methodExceptionsFunction(MethodDeclaration m) {
+    if (m.thrownExceptions().isEmpty() || Options.stripReflection()) {
+      return "";
+    }
+    IMethodBinding method = Types.getMethodBinding(m);
+    StringBuilder sb = new StringBuilder();
+    sb.append("+ (IOSObjectArray *)__exceptions_");
+    sb.append(methodKey(method));
+    sb.append(" {\n");
+    ITypeBinding[] exceptionTypes = method.getExceptionTypes();
+    sb.append("  return [IOSObjectArray arrayWithObjects:(id[]) { ");
+    for (int i = 0; i < exceptionTypes.length; i++) {
+      if (i > 0) {
+        sb.append(", ");
+      }
+      sb.append('[');
+      sb.append(NameTable.getFullName(exceptionTypes[i]));
+      sb.append(" getClass]");
+    }
+    sb.append(" } count:");
+    sb.append(exceptionTypes.length);
+    sb.append(" type:[IOSClass getClass]];\n}\n\n");
+    return sb.toString();
   }
 
   private String generateNativeStub(MethodDeclaration m) {
@@ -595,7 +662,7 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
   @Override
   protected String getParameterName(SingleVariableDeclaration param) {
     String name = super.getParameterName(param);
-    IVariableBinding binding = param.resolveBinding();
+    IVariableBinding binding = Types.getVariableBinding(param);
     return binding != null && fieldHiders.contains(binding) ? name + "Arg" : name;
   }
 
@@ -604,8 +671,7 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
     String methodBody;
     IMethodBinding binding = Types.getMethodBinding(m);
     boolean memDebug = Options.memoryDebug();
-    @SuppressWarnings("unchecked")
-    List<Statement> statements = m.getBody().statements();
+    List<Statement> statements = ASTUtil.getStatements(m.getBody());
     if (binding.getDeclaringClass().isEnum()) {
       return enumConstructorDeclaration(m, statements, binding);
     } else if (statements.isEmpty()) {
@@ -643,28 +709,25 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
       sb.append("}\nreturn self;\n}");
       methodBody = sb.toString();
     }
-    if (invokedConstructors.contains(constructorKey(binding))) {
+    if (invokedConstructors.contains(parameterKey(binding))) {
       return super.constructorDeclaration(m, true) + " " + reindent(methodBody) + "\n\n"
           + super.constructorDeclaration(m, false) + " {\n  return "
           + generateStatement(createInnerConstructorInvocation(m), false) + ";\n}\n\n";
     } else {
-      return super.constructorDeclaration(m, false) + " " + reindent(methodBody) + "\n\n";
+      return super.constructorDeclaration(m, false) + " " + reindent(methodBody) + "\n\n" +
+          methodExceptionsFunction(m);
     }
   }
 
   private Statement createInnerConstructorInvocation(MethodDeclaration m) {
     ConstructorInvocation invocation = m.getAST().newConstructorInvocation();
     Types.addBinding(invocation, Types.getBinding(m));
-    @SuppressWarnings("unchecked")
-    List<Expression> arguments = invocation.arguments();
-    @SuppressWarnings("unchecked")
-    List<SingleVariableDeclaration> params = m.parameters();
-    for (SingleVariableDeclaration param : params) {
+    for (SingleVariableDeclaration param : ASTUtil.getParameters(m)) {
       SimpleName paramName = param.getName();
       IVariableBinding paramBinding = Types.getVariableBinding(paramName);
       SimpleName argName = m.getAST().newSimpleName(paramName.getIdentifier());
       Types.addBinding(argName, paramBinding);
-      arguments.add(argName);
+      ASTUtil.getArguments(invocation).add(argName);
     }
     return invocation;
   }
@@ -681,7 +744,7 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
     String invocation = generateStatement(statements.get(0), false, true) + ";\n";
     List<?> args = s instanceof ConstructorInvocation
         ? ((ConstructorInvocation) s).arguments() : ((SuperConstructorInvocation) s).arguments();
-    String impliedArgs = (args.isEmpty() ? "W" : " w") + "ithNSString:name withInt:ordinal";
+    String impliedArgs = (args.isEmpty() ? "W" : " w") + "ithNSString:__name withInt:__ordinal";
     int index = invocation.lastIndexOf(']');
     invocation = invocation.substring(0, index) + impliedArgs + ']';
 
@@ -707,19 +770,27 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
       }
       sb.append("}\nreturn self;\n}");
     }
-    String result = super.constructorDeclaration(m) + " " + reindent(sb.toString()) + "\n\n";
-    return result;
+
+    // Insert synthetic parameters.
+    StringBuilder sb2 =
+        new StringBuilder(generateStatement(createInnerConstructorInvocation(m), false));
+    invocation = sb2.insert(sb2.length() - 1, " withNSString:__name withInt:__ordinal").toString();
+
+    if (invokedConstructors.contains(parameterKey(binding))) {
+      return super.constructorDeclaration(m, true) + " " + reindent(sb.toString()) + "\n\n"
+          + super.constructorDeclaration(m, false) + " {\n  return "
+          + invocation + ";\n}\n\n";
+    } else {
+      return super.constructorDeclaration(m, false) + " " + reindent(sb.toString()) + "\n\n";
+    }
   }
 
   @Override
   protected void printStaticConstructorDeclaration(MethodDeclaration m) {
-    String className =
-        NameTable.javaTypeToObjC(Types.getMethodBinding(m).getDeclaringClass(), false);
+    String className = NameTable.getFullName(Types.getMethodBinding(m).getDeclaringClass());
     StringBuffer sb = new StringBuffer();
     sb.append("{\nif (self == [" + className + " class]) {\n");
-    @SuppressWarnings("unchecked")
-    List<Statement> statements = m.getBody().statements();
-    for (Statement statement : statements) {
+    for (Statement statement : ASTUtil.getStatements(m.getBody())) {
       sb.append(generateStatement(statement, false, true));
     }
     sb.append("}\n}");
@@ -741,72 +812,6 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
         getBuilder().getSourcePosition());
   }
 
-  private void printMainMethod(MethodDeclaration m, String typeName,
-      List<IMethodBinding> testMethods) {
-    if (m != null) {  // True for unit tests.
-      Types.addFunction(Types.getMethodBinding(m));
-    }
-    println("int main( int argc, const char *argv[] ) {");
-    if (m != null && (m.getModifiers() & Modifier.NATIVE) > 0 && hasNativeCode(m)) {
-      println(extractNativeMethodBody(m));
-      return;
-    }
-    indent();
-    printIndent();
-    println("int exitCode = 0;");
-    if (Options.memoryDebug()) {
-      printIndent();
-      println("JreMemDebugEnabled = TRUE;");
-    }
-    if (!Options.useGC()) {
-      printIndent();
-      println("@autoreleasepool {");
-      indent();
-    }
-
-    if (m != null) {
-      @SuppressWarnings("unchecked")
-      List<SingleVariableDeclaration> params = m.parameters();
-      assert params.size() == 1;  // Previously checked in isMainMethod().
-      printIndent();
-      printf("IOSObjectArray *%s = JreEmulationMainArguments(argc, argv);\n\n",
-          params.get(0).getName().getIdentifier());
-      printMethodBody(m, true);
-    }
-    if (testMethods != null) {
-      printIndent();
-      printf("exitCode = [JUnitRunner runTests:[%s class]", typeName);
-      for (IMethodBinding test : testMethods) {
-        printf(", @\"%s\"", test.getName());
-      }
-      println(", nil];");
-    }
-    if (!Options.useGC()) {
-      unindent();
-      printIndent();
-      println("}");
-    }
-    if (Options.memoryDebug()) {
-      printIndent();
-      println("JreMemDebugGenerateAllocationsReport();");
-    }
-    printIndent();
-    println("return exitCode;");
-    unindent();
-    println("}");
-  }
-
-  private void printMethodBody(MethodDeclaration m, boolean isFunction) throws AssertionError {
-    for (Object stmt : m.getBody().statements()) {
-      if (stmt instanceof Statement) {
-        String objcStmt = reindent(generateStatement((Statement) stmt, isFunction));
-        println(objcStmt);
-      } else {
-        throw new AssertionError("unexpected AST type: " + stmt.getClass());
-      }
-    }
-  }
-
   private String extractNativeMethodBody(MethodDeclaration m) {
     assert (m.getModifiers() & Modifier.NATIVE) > 0;
     String nativeCode = extractNativeCode(m.getStartPosition(), m.getLength());
@@ -823,29 +828,27 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
   private void printImports(CompilationUnit node) {
     ImplementationImportCollector collector = new ImplementationImportCollector();
     collector.collect(node, getSourceFileName());
-    Set<ImportCollector.Import> imports = collector.getImports();
+    Set<Import> imports = collector.getImports();
 
     if (!imports.isEmpty()) {
-      Set<String> importStmts = Sets.newTreeSet();
-      for (ImportCollector.Import imp : imports) {
-        importStmts.add(String.format("#import \"%s.h\"", imp.getImportFileName()));
+      Set<String> includeStmts = Sets.newTreeSet();
+      for (Import imp : imports) {
+        includeStmts.add(String.format("#include \"%s.h\"", imp.getImportFileName()));
       }
-      for (String stmt : importStmts) {
+      for (String stmt : includeStmts) {
         println(stmt);
       }
 
-      // Print native imports.
+      // Print native includes.
       int endOfImportText = node.types().isEmpty() ? node.getLength()
           : ((ASTNode) node.types().get(0)).getStartPosition();
-      @SuppressWarnings("unchecked")
-      List<Comment> comments = node.getCommentList(); // safe by definition
-      for (Comment c : comments) {
+      for (Comment c : ASTUtil.getCommentList(node)) {
         int start = c.getStartPosition();
         if (start >= endOfImportText) {
           break;
         }
         if (c instanceof BlockComment) {
-          String nativeImport = extractNativeCode(start, c.getLength());
+          String nativeImport = extractNativeCode(start, c.getLength(), true);
           if (nativeImport != null) {  // if it has a JSNI section
             println(nativeImport.trim());
           }
@@ -860,16 +863,14 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
     boolean hadStaticVar = false;
     for (FieldDeclaration f : fields) {
       if (Modifier.isStatic(f.getModifiers()) || isInterface) {
-        @SuppressWarnings("unchecked")
-        List<VariableDeclarationFragment> fragments = f.fragments(); // safe by specification
-        for (VariableDeclarationFragment var : fragments) {
+        for (VariableDeclarationFragment var : ASTUtil.getFragments(f)) {
           IVariableBinding binding = Types.getVariableBinding(var);
-          if (!Types.isPrimitiveConstant(binding)) {
+          if (!BindingUtil.isPrimitiveConstant(binding)) {
             String name = NameTable.getStaticVarQualifiedName(binding);
-            String objcType = NameTable.javaRefToObjC(f.getType());
+            String objcType = NameTable.getObjCType(binding.getType());
             Expression initializer = var.getInitializer();
             if (initializer != null) {
-              printConstant(name, initializer);
+              printf("static %s %s = %s;\n", objcType, name, generateExpression(initializer));
             } else {
               printf("static %s %s;\n", objcType, name);
             }
@@ -883,102 +884,23 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
     }
   }
 
-  private void printProperties(List<FieldDeclaration> fields) {
+  private void printAnnotationProperties(List<AnnotationTypeMemberDeclaration> members) {
     int nPrinted = 0;
-    for (FieldDeclaration field : fields) {
-      if ((field.getModifiers() & Modifier.STATIC) == 0) {
-        @SuppressWarnings("unchecked")
-        List<VariableDeclarationFragment> vars = field.fragments(); // safe by definition
-        for (VariableDeclarationFragment var : vars) {
-          if (var.getName().getIdentifier().startsWith("this$") && superDefinesVariable(var)) {
-            // Don't print, as it shadows an inner field in a super class.
-            continue;
-          }
-
-          String name = NameTable.getName(var.getName());
-          ITypeBinding type = Types.getTypeBinding(field.getType());
-          String typeString = NameTable.javaRefToObjC(type);
-          String objCFieldName = NameTable.javaFieldToObjC(name);
-
-          // Don't emit the getter when there is already a method with the
-          // same name.
-          boolean hasGetter = false;
-          boolean hasSetter = false;
-          ITypeBinding declaringClass = Types.getTypeBinding(field.getParent());
-          if (declaringClass != null) {
-            IMethodBinding[] methods = declaringClass.getDeclaredMethods();
-            for (IMethodBinding method : methods) {
-              if (method.getName().equals(name) && method.getParameterTypes().length == 0) {
-                hasGetter = true;
-                break;
-              }
-            }
-          }
-
-          if (!hasGetter && Options.useReferenceCounting() && !type.isPrimitive()) {
-            // Generates a getter that will make sure the returned object is still valid
-            // if it's used after it's unreferenced by the instance.
-            printf(String.format("- (%s)%s {\n  return %s;\n}\n",
-                typeString, name, objCFieldName));
-            hasGetter = true;
-          }
-          IVariableBinding binding = Types.getVariableBinding(var);
-          if (Options.useReferenceCounting() && !type.isPrimitive() &&
-              !Types.isWeakReference(binding)) {
-            // Setter can always be generated and won't collide with a transpiled method name.
-            String setterName = "set" + NameTable.capitalize(name);
-            printf(String.format("- (void)%s:(%s)%s {\n  JreOperatorRetainedAssign(&%s, %s);\n}\n",
-                setterName, typeString, name, objCFieldName, name));
-          }
-          if (!hasGetter || !hasSetter) {
-            printf(String.format("@synthesize %s = %s;\n", name, objCFieldName));
-          }
-          nPrinted++;
-        }
-      }
+    for (AnnotationTypeMemberDeclaration member : members) {
+      println(String.format("@synthesize %s;", NameTable.getName(member.getName())));
+      nPrinted++;
     }
     if (nPrinted > 0) {
       newline();
     }
   }
 
-  private void printConstant(String name, Expression initializer) {
-    Object constant = initializer.resolveConstantExpressionValue();
-    String text = generateExpression(initializer);
-    // non-constant initializers were already moved to static blocks
-    assert constant != null;
-    print("static ");
-    if (constant instanceof String) {
-      printf("NSString * %s = %s;\n", name, text);
-    } else if (constant instanceof Boolean) {
-      printf("BOOL %s = %s;\n;", name, ((Boolean) constant).booleanValue() ? "YES" : "NO");
-    } else if (constant instanceof Character) {
-      printf("unichar %s = %s;\n", name, text);
-    } else {
-      assert constant instanceof Number;
-      Number number = (Number) constant;
-      if (constant instanceof Byte) {
-        printf("char %s = %d;\n", name, number.byteValue());
-      } else if (constant instanceof Double) {
-        printf("double %s = %s;\n", name, text);
-      } else if (constant instanceof Float) {
-        printf("float %s = %s;\n", name, text);
-      } else if (constant instanceof Integer) {
-        printf("int %s = %s;\n", name, text);
-      } else if (constant instanceof Long) {
-        printf("long long %s = %s;\n", name, text);
-      } else {
-        printf("short %s = %d;\n", name, number.shortValue());
-      }
-    }
-  }
-
-   /**
-    * If type extends java.lang.Number, add a required implementation of
-    * NSValue.objCType().  This can't be implemented as a native method
-    * because its return type is const char *.  Since this method overrides
-    * the default implementation, the signatures need to match exactly.
-    */
+  /**
+   * If type extends java.lang.Number, add a required implementation of
+   * NSValue.objCType().  This can't be implemented as a native method
+   * because its return type is const char *.  Since this method overrides
+   * the default implementation, the signatures need to match exactly.
+   */
   private void printObjCTypeMethod(TypeDeclaration node) {
     ITypeBinding type = Types.getTypeBinding(node);
     if (Types.isJavaNumberType(type)) {
@@ -1005,4 +927,156 @@ public class ObjectiveCImplementationGenerator extends ObjectiveCSourceFileGener
       println("}\n");
     }
   }
+
+  private void printTypeAnnotationsMethod(AbstractTypeDeclaration decl) {
+    List<Annotation> runtimeAnnotations = ASTUtil.getRuntimeAnnotations(ASTUtil.getModifiers(decl));
+    if (runtimeAnnotations.size() > 0) {
+      println("+ (IOSObjectArray *)__annotations {");
+      printAnnotationCreate(runtimeAnnotations);
+    }
+  }
+
+  private void printMethodAnnotationMethods(List<MethodDeclaration> methods) {
+    for (MethodDeclaration method : methods) {
+      List<Annotation> runtimeAnnotations =
+          ASTUtil.getRuntimeAnnotations(ASTUtil.getModifiers(method));
+      if (runtimeAnnotations.size() > 0) {
+        printf("+ (IOSObjectArray *)__annotations_%s {\n",
+            methodKey(Types.getMethodBinding(method)));
+        printAnnotationCreate(runtimeAnnotations);
+      }
+      printParameterAnnotationMethods(method);
+    }
+  }
+
+  private void printParameterAnnotationMethods(MethodDeclaration method) {
+    List<SingleVariableDeclaration> params = ASTUtil.getParameters(method);
+
+    // Quick test to see if there are any parameter annotations.
+    boolean hasAnnotations = false;
+    for (SingleVariableDeclaration param : params) {
+      List<Annotation> runtimeAnnotations =
+          ASTUtil.getRuntimeAnnotations(ASTUtil.getModifiers(param));
+      if (runtimeAnnotations.size() > 0) {
+        hasAnnotations = true;
+        break;
+      }
+    }
+
+    if (hasAnnotations) {
+      // Print array of arrays, with an element in the outer array for each parameter.
+      printf("+ (IOSObjectArray *)__annotations_%s_params {\n",
+          methodKey(Types.getMethodBinding(method)));
+      print("  return [IOSObjectArray arrayWithObjects:(id[]) { ");
+      for (int i = 0; i < params.size(); i++) {
+        if (i > 0) {
+          print(", ");
+        }
+        SingleVariableDeclaration param = params.get(i);
+        List<Annotation> runtimeAnnotations =
+            ASTUtil.getRuntimeAnnotations(ASTUtil.getModifiers(param));
+        if (runtimeAnnotations.size() > 0) {
+          print("[IOSObjectArray arrayWithObjects:(id[]) { ");
+          printAnnotations(runtimeAnnotations);
+          printf(" } count:%d type:[IOSClass classWithProtocol:" +
+              "@protocol(JavaLangAnnotationAnnotation)]]", runtimeAnnotations.size());
+        } else {
+          print("[IOSObjectArray arrayWithLength:0 " +
+              "type:[IOSClass classWithProtocol:@protocol(JavaLangAnnotationAnnotation)]]");
+        }
+      }
+      printf(" } count:%d type:[IOSClass classWithProtocol:" +
+          "@protocol(JavaLangAnnotationAnnotation)]];\n}\n", params.size());
+    }
+  }
+
+  private void printFieldAnnotationMethods(List<FieldDeclaration> fields) {
+    for (FieldDeclaration field : fields) {
+      List<Annotation> runtimeAnnotations =
+          ASTUtil.getRuntimeAnnotations(ASTUtil.getModifiers(field));
+      if (runtimeAnnotations.size() > 0) {
+        for (VariableDeclarationFragment var : ASTUtil.getFragments(field)) {
+          printf("+ (IOSObjectArray *)__annotations_%s_ {\n", var.getName().getIdentifier());
+          printAnnotationCreate(runtimeAnnotations);
+        }
+      }
+    }
+  }
+
+  private void printAnnotationCreate(List<Annotation> runtimeAnnotations) {
+    print("  return [IOSObjectArray arrayWithObjects:(id[]) { ");
+    printAnnotations(runtimeAnnotations);
+    printf(" } count:%d type:[IOSClass " +
+        "classWithProtocol:@protocol(JavaLangAnnotationAnnotation)]];\n}\n\n",
+        runtimeAnnotations.size());
+  }
+
+  private void printAnnotations(List<Annotation> runtimeAnnotations) {
+    boolean first = true;
+    for (Annotation annotation : runtimeAnnotations) {
+      if (first) {
+        first = false;
+      } else {
+        print(", ");
+      }
+      if (Options.useReferenceCounting()) {
+        print('[');
+      }
+      printf("[[%sImpl alloc] init",
+          NameTable.getFullName(Types.getTypeBinding(annotation)));
+      printAnnotationParameters(annotation);
+      print(']');
+      if (Options.useReferenceCounting()) {
+        print(" autorelease]");
+      }
+    }
+  }
+
+  // Prints an annotation's values as a constructor argument list. If
+  // the annotation type declares default values, then for any value that
+  // isn't specified in the annotation will use the default.
+  private void printAnnotationParameters(Annotation annotation) {
+    IAnnotationBinding binding = Types.getAnnotationBinding(annotation);
+    IMemberValuePairBinding[] valueBindings = BindingUtil.getSortedMemberValuePairs(binding);
+    for (int i = 0; i < valueBindings.length; i++) {
+      if (i > 0) {
+        print(' ');
+      }
+      IMemberValuePairBinding valueBinding = valueBindings[i];
+      print(i == 0 ? "With" : "with");
+      printf("%s:", NameTable.capitalize(valueBinding.getName()));
+      Object value = valueBinding.getValue();
+      printAnnotationValue(value);
+    }
+  }
+
+  private void printAnnotationValue(Object value) {
+    if (value == null) {
+      print("nil");
+    } else if (value instanceof IVariableBinding) {
+      IVariableBinding var = (IVariableBinding) value;
+      ITypeBinding declaringClass = var.getDeclaringClass();
+      printf("[%s %s]", NameTable.getFullName(declaringClass), var.getName());
+    } else if (value instanceof ITypeBinding) {
+      ITypeBinding type = (ITypeBinding) value;
+      printf("[%s getClass]", NameTable.getFullName(type));
+    } else if (value instanceof String) {
+      printf("@\"%s\"", value);
+    } else if (value instanceof Number || value instanceof Character || value instanceof Boolean) {
+      print(value.toString());
+    } else if (value.getClass().isArray()) {
+      print("[IOSObjectArray arrayWithObjects:(id[]) { ");
+      Object[] array = (Object[]) value;
+      for (int i = 0; i < array.length; i++) {
+        if (i > 0) {
+          print(", ");
+        }
+        printAnnotationValue(array[i]);
+      }
+      printf(" } count:%d type:[NSObject getClass]]", array.length);
+    } else {
+      assert false : "unknown annotation value type";
+    }
+  }
+
 }

@@ -42,42 +42,66 @@
 #endif
 }
 
++ (id)arrayWithLength:(NSUInteger)length {
+  return AUTORELEASE([[[self class] alloc] initWithLength:length]);
+}
+
 + (id)arrayWithDimensions:(NSUInteger)dimensionCount
-                  lengths:(NSUInteger *)dimensionLengths {
+                  lengths:(const int *)dimensionLengths {
   if (dimensionCount == 0) {
-    id exception = [[JavaLangAssertionError alloc]
-                    initWithId:@"invalid dimension count"];
-#if ! __has_feature(objc_arc)
-    [exception autorelease];
-#endif
-    @throw exception;
+    @throw AUTORELEASE([[JavaLangAssertionError alloc] initWithId:@"invalid dimension count"]);
   }
 
+  __unsafe_unretained IOSClass *componentTypes[dimensionCount];
+  componentTypes[dimensionCount - 1] = nil;
+  for (int i = dimensionCount - 2; i >= 0; i--) {
+    __unsafe_unretained IOSClass *last = componentTypes[i + 1];
+    if (last) {
+      componentTypes[i] = [IOSClass arrayClassWithComponentType:last];
+    } else {
+      componentTypes[i] = [self iosClass];
+    }
+  }
+  return [self arrayWithDimensions:dimensionCount lengths:dimensionLengths types:componentTypes];
+}
+
++ (id)arrayWithDimensions:(NSUInteger)dimensionCount
+                  lengths:(const int *)dimensionLengths
+                    types:(__unsafe_unretained IOSClass * const *)componentTypes {
   NSUInteger size = *dimensionLengths;
+  __unsafe_unretained IOSClass *componentType = *componentTypes;
 
   // If dimension of 1, just return a regular array.
   if (dimensionCount == 1) {
-    id array = [[[self class] alloc] initWithLength:size];
-#if ! __has_feature(objc_arc)
-    [array autorelease];
-#endif
-    return array;
+    if (componentType) {
+      return AUTORELEASE([[IOSObjectArray alloc] initWithLength:size type:componentType]);
+    } else {
+      return AUTORELEASE([[[self class] alloc] initWithLength:size]);
+    }
   }
 
   // Create an array of arrays, which is recursive to handle additional
   // dimensions.
-  IOSObjectArray *result =
-      [[IOSObjectArray alloc] initWithLength:size type:
-       [IOSClass classWithClass:[IOSObjectArray class]]];
+  __unsafe_unretained id subarrays[size];
   for (NSUInteger i = 0; i < size; i++) {
-    id subarray = [[self class] arrayWithDimensions:dimensionCount - 1
-                                            lengths:dimensionLengths + 1];
-    [result replaceObjectAtIndex:i withObject:subarray];
+    subarrays[i] = [[self class] arrayWithDimensions:dimensionCount - 1
+                                             lengths:dimensionLengths + 1
+                                               types:componentTypes + 1];
   }
-#if ! __has_feature(objc_arc)
-  [result autorelease];
-#endif
+  return AUTORELEASE([[IOSObjectArray alloc]
+      initWithObjects:subarrays count:size type:componentType]);
+}
 
++ (id)iosClass {
+  @throw AUTORELEASE([[JavaLangAssertionError alloc] initWithNSString:
+      @"abstract method not overridden"]);
+}
+
++ (id)iosClassWithDimensions:(NSUInteger)dimensions {
+  IOSClass *result = [self iosClass];
+  while (--dimensions > 0) {
+    result = [IOSClass arrayClassWithComponentType:result];
+  }
   return result;
 }
 
@@ -85,46 +109,11 @@
   return size_;
 }
 
-- (void)checkIndex:(NSUInteger)index {
-  if (index >= size_) {
-    NSString *msg = [NSString stringWithFormat:
-        @"index out of range: %ld for array containing %ld elements",
-        (long)index, (long)size_];
-    id exception = [[JavaLangArrayIndexOutOfBoundsException alloc]
-                    initWithNSString:msg];
-#if ! __has_feature(objc_arc)
-    [exception autorelease];
-#endif
-    @throw exception;
-  }
-}
-
-- (void)checkRange:(NSRange)range {
-  if (range.length > 0) {
-    [self checkIndex:range.location];
-    NSUInteger bounds = range.location + range.length;
-    if (bounds > size_) {
-      NSString *msg = [NSString stringWithFormat:
-                       @"length out of range: %ld for array of %ld elements",
-                       (long)bounds, (long)size_];
-      id exception = [[JavaLangArrayIndexOutOfBoundsException alloc]
-                      initWithNSString:msg];
-#if ! __has_feature(objc_arc)
-      [exception autorelease];
-#endif
-      @throw exception;
-    }
-  }
-}
-
-- (void)checkRange:(NSRange)range withOffset:(NSUInteger)offset {
-  if (range.length == 0) {
-    return;
-  }
-  
-  [self checkIndex:offset];
-  [self checkIndex:range.location];
-  [self checkRange:NSMakeRange(range.location + offset, range.length)];
+void IOSArray_throwOutOfBounds(NSUInteger size, NSUInteger index) {
+  NSString *msg = [NSString stringWithFormat:
+      @"index out of range: %ld for array containing %ld elements",
+      (long)index, (long)size];
+  @throw AUTORELEASE([[JavaLangArrayIndexOutOfBoundsException alloc] initWithNSString:msg]);
 }
 
 - (NSString *)descriptionOfElementAtIndex:(NSUInteger)index {
@@ -133,18 +122,20 @@
 }
 
 - (NSString *)description {
+  if (size_ == 0) {
+    return @"[]";
+  }
   NSString *result = @"[";
   for (int i = 0; i < size_; i++) {
     NSString *separator = i < size_ - 1 ? @", " : @"]";
     result = [result stringByAppendingFormat:@"%@%@",
                      [self descriptionOfElementAtIndex:i], separator];
   }
-
   return result;
 }
 
 - (IOSClass *)getClass {
-  return [IOSArrayClass classWithComponentType:[self elementType]];
+  return [IOSClass arrayClassWithComponentType:[self elementType]];
 }
 
 - (IOSClass *)elementType {
@@ -156,10 +147,6 @@
            initWithNSString:@"abstract method not overridden"] autorelease];
 #endif
   return nil;
-}
-
-- (NSString *)binaryName {
-  return [[self getClass] getName];
 }
 
 - (id)copyWithZone:(NSZone *)zone {

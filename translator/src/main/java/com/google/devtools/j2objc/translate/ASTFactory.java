@@ -14,32 +14,49 @@
 
 package com.google.devtools.j2objc.translate;
 
+import com.google.devtools.j2objc.types.IOSMethodBinding;
+import com.google.devtools.j2objc.types.IOSTypeBinding;
 import com.google.devtools.j2objc.types.Types;
+import com.google.devtools.j2objc.util.ASTUtil;
 
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ArrayAccess;
+import org.eclipse.jdt.core.dom.ArrayCreation;
+import org.eclipse.jdt.core.dom.ArrayInitializer;
+import org.eclipse.jdt.core.dom.ArrayType;
 import org.eclipse.jdt.core.dom.Assignment;
+import org.eclipse.jdt.core.dom.BooleanLiteral;
+import org.eclipse.jdt.core.dom.CastExpression;
 import org.eclipse.jdt.core.dom.CharacterLiteral;
 import org.eclipse.jdt.core.dom.Expression;
+import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
 import org.eclipse.jdt.core.dom.ForStatement;
+import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.InstanceofExpression;
+import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
+import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.Name;
 import org.eclipse.jdt.core.dom.NullLiteral;
 import org.eclipse.jdt.core.dom.NumberLiteral;
+import org.eclipse.jdt.core.dom.ParenthesizedExpression;
 import org.eclipse.jdt.core.dom.PostfixExpression;
 import org.eclipse.jdt.core.dom.PrefixExpression;
+import org.eclipse.jdt.core.dom.PrimitiveType;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.StringLiteral;
+import org.eclipse.jdt.core.dom.SuperMethodInvocation;
+import org.eclipse.jdt.core.dom.ThisExpression;
 import org.eclipse.jdt.core.dom.Type;
+import org.eclipse.jdt.core.dom.TypeLiteral;
 import org.eclipse.jdt.core.dom.VariableDeclarationExpression;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
@@ -54,16 +71,19 @@ import java.util.List;
  */
 public final class ASTFactory {
 
-  public static SimpleName newSimpleName(AST ast, IVariableBinding binding) {
-    SimpleName name = ast.newSimpleName(binding.getName());
-    Types.addBinding(name, binding);
-    return name;
+  @SuppressWarnings("unchecked")
+  public static List<Modifier> newModifiers(AST ast, int flags) {
+    return ast.newModifiers(flags);
   }
 
-  public static SimpleName newSimpleName(AST ast, IMethodBinding binding) {
-    SimpleName name = ast.newSimpleName(binding.getName());
-    Types.addBinding(name, binding);
-    return name;
+  public static SimpleName newSimpleName(AST ast, IBinding binding) {
+    String name = binding.getName();
+    if (name.isEmpty()) {
+      name = "$Unnamed$";
+    }
+    SimpleName nameNode = ast.newSimpleName(name);
+    Types.addBinding(nameNode, binding);
+    return nameNode;
   }
 
   public static QualifiedName newQualifiedName(AST ast, Name qualifier, SimpleName name) {
@@ -85,6 +105,14 @@ public final class ASTFactory {
     return name;
   }
 
+  public static FieldAccess newFieldAccess(AST ast, IVariableBinding var, Expression expr) {
+    FieldAccess node = ast.newFieldAccess();
+    node.setExpression(expr);
+    node.setName(newSimpleName(ast, var));
+    Types.addBinding(node, var);
+    return node;
+  }
+
   public static Assignment newAssignment(AST ast, Expression lhs, Expression rhs) {
     Assignment assignment = ast.newAssignment();
     assignment.setOperator(Assignment.Operator.ASSIGN);
@@ -103,47 +131,53 @@ public final class ASTFactory {
     return frag;
   }
 
-  @SuppressWarnings("unchecked")
   public static VariableDeclarationStatement newVariableDeclarationStatement(
-      AST ast, IVariableBinding binding, Expression initializer) {
-    VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(
-        newVariableDeclarationFragment(ast, binding, initializer));
-    decl.setType(Types.makeType(binding.getType()));
-    decl.modifiers().addAll(ast.newModifiers(binding.getModifiers()));
+      AST ast, VariableDeclarationFragment fragment) {
+    IVariableBinding varBinding = Types.getVariableBinding(fragment);
+    VariableDeclarationStatement decl = ast.newVariableDeclarationStatement(fragment);
+    decl.setType(newType(ast, varBinding.getType()));
+    ASTUtil.getModifiers(decl).addAll(newModifiers(ast, varBinding.getModifiers()));
     return decl;
   }
 
-  @SuppressWarnings("unchecked")
+  public static VariableDeclarationStatement newVariableDeclarationStatement(
+      AST ast, IVariableBinding binding, Expression initializer) {
+    return newVariableDeclarationStatement(ast, newVariableDeclarationFragment(
+        ast, binding, initializer));
+  }
+
   public static VariableDeclarationExpression newVariableDeclarationExpression(
       AST ast, IVariableBinding binding, Expression initializer) {
     VariableDeclarationExpression decl = ast.newVariableDeclarationExpression(
         newVariableDeclarationFragment(ast, binding, initializer));
-    decl.setType(Types.makeType(binding.getType()));
-    decl.modifiers().addAll(ast.newModifiers(binding.getModifiers()));
+    decl.setType(newType(ast, binding.getType()));
+    ASTUtil.getModifiers(decl).addAll(newModifiers(ast, binding.getModifiers()));
     Types.addBinding(decl, binding.getType());
     return decl;
   }
 
-  @SuppressWarnings("unchecked")
   public static SingleVariableDeclaration newSingleVariableDeclaration(
       AST ast, IVariableBinding binding) {
     SingleVariableDeclaration decl = ast.newSingleVariableDeclaration();
     decl.setName(newSimpleName(ast, binding));
-    decl.setType(Types.makeType(binding.getType()));
-    decl.modifiers().addAll(ast.newModifiers(binding.getModifiers()));
+    decl.setType(newType(ast, binding.getType()));
+    ASTUtil.getModifiers(decl).addAll(newModifiers(ast, binding.getModifiers()));
     Types.addBinding(decl, binding);
     return decl;
   }
 
-  @SuppressWarnings("unchecked")
+  public static FieldDeclaration newFieldDeclaration(
+      AST ast, VariableDeclarationFragment fragment) {
+    IVariableBinding varBinding = Types.getVariableBinding(fragment);
+    FieldDeclaration decl = ast.newFieldDeclaration(fragment);
+    decl.setType(newType(ast, varBinding.getType()));
+    ASTUtil.getModifiers(decl).addAll(newModifiers(ast, varBinding.getModifiers()));
+    return decl;
+  }
+
   public static FieldDeclaration newFieldDeclaration(
       AST ast, IVariableBinding binding, Expression initializer) {
-    FieldDeclaration decl = ast.newFieldDeclaration(
-        newVariableDeclarationFragment(ast, binding, initializer));
-    decl.setType(Types.makeType(binding.getType()));
-    decl.modifiers().addAll(ast.newModifiers(binding.getModifiers()));
-    Types.addBinding(decl, binding);
-    return decl;
+    return newFieldDeclaration(ast, newVariableDeclarationFragment(ast, binding, initializer));
   }
 
   public static PrefixExpression newPrefixExpression(
@@ -156,18 +190,18 @@ public final class ASTFactory {
   }
 
   public static InfixExpression newInfixExpression(
-      AST ast, Expression lhs, InfixExpression.Operator op, Expression rhs, String type) {
+      AST ast, Expression lhs, InfixExpression.Operator op, Expression rhs, ITypeBinding type) {
     InfixExpression expr = ast.newInfixExpression();
     expr.setOperator(op);
     expr.setLeftOperand(lhs);
     expr.setRightOperand(rhs);
-    Types.addBinding(expr, ast.resolveWellKnownType(type));
+    Types.addBinding(expr, type);
     return expr;
   }
 
   public static InfixExpression newInfixExpression(
       AST ast, IVariableBinding lhs, InfixExpression.Operator op, IVariableBinding rhs,
-      String type) {
+      ITypeBinding type) {
     return newInfixExpression(ast, newSimpleName(ast, lhs), op, newSimpleName(ast, rhs), type);
   }
 
@@ -191,17 +225,22 @@ public final class ASTFactory {
     return access;
   }
 
+  public static ArrayCreation newArrayCreation(AST ast, ArrayInitializer initializer) {
+    ITypeBinding type = Types.getTypeBinding(initializer);
+    ArrayCreation arrayCreation = ast.newArrayCreation();
+    arrayCreation.setType((ArrayType) newType(ast, type));
+    arrayCreation.setInitializer(initializer);
+    Types.addBinding(arrayCreation, type);
+    return arrayCreation;
+  }
+
   public static ForStatement newForStatement(
       AST ast, VariableDeclarationExpression decl, Expression cond, Expression updater,
       Statement body) {
     ForStatement forLoop = ast.newForStatement();
-    @SuppressWarnings("unchecked")
-    List<Expression> initializers = forLoop.initializers(); // safe by definition
-    initializers.add(decl);
+    ASTUtil.getInitializers(forLoop).add(decl);
     forLoop.setExpression(cond);
-    @SuppressWarnings("unchecked")
-    List<Expression> updaters = forLoop.updaters(); // safe by definition
-    updaters.add(updater);
+    ASTUtil.getUpdaters(forLoop).add(updater);
     forLoop.setBody(body);
     return forLoop;
   }
@@ -215,27 +254,70 @@ public final class ASTFactory {
     return invocation;
   }
 
+  public static SuperMethodInvocation newSuperMethodInvocation(AST ast, IMethodBinding binding) {
+    SuperMethodInvocation invocation = ast.newSuperMethodInvocation();
+    invocation.setName(newSimpleName(ast, binding));
+    Types.addBinding(invocation, binding);
+    return invocation;
+  }
+
+  public static MethodInvocation newDereference(AST ast, Expression node) {
+    IOSMethodBinding binding = IOSMethodBinding.newDereference(Types.getTypeBinding(node));
+    MethodInvocation invocation = newMethodInvocation(ast, binding, null);
+    ASTUtil.getArguments(invocation).add(node);
+    return invocation;
+  }
+
+  public static MethodInvocation newAddressOf(AST ast, Expression node) {
+    IOSMethodBinding binding = IOSMethodBinding.newAddressOf(Types.getTypeBinding(node));
+    MethodInvocation invocation = newMethodInvocation(ast, binding, null);
+    ASTUtil.getArguments(invocation).add(node);
+    return invocation;
+  }
+
+  public static MethodDeclaration newMethodDeclaration(AST ast, IMethodBinding binding) {
+    MethodDeclaration declaration = ast.newMethodDeclaration();
+    declaration.setConstructor(binding.isConstructor());
+    declaration.setName(newSimpleName(ast, binding));
+    declaration.setReturnType2(newType(ast, binding.getReturnType()));
+    ASTUtil.getModifiers(declaration).addAll(newModifiers(ast, binding.getModifiers()));
+    Types.addBinding(declaration, binding);
+    return declaration;
+  }
+
+  public static SimpleName newLabel(AST ast, String identifier) {
+    SimpleName node = ast.newSimpleName(identifier);
+    Types.addBinding(node, IOSTypeBinding.newUnmappedClass(identifier));
+    return node;
+  }
+
   public static NumberLiteral newNumberLiteral(AST ast, String token, String type) {
     NumberLiteral literal = ast.newNumberLiteral(token);
     Types.addBinding(literal, ast.resolveWellKnownType(type));
     return literal;
   }
 
-  public static InfixExpression createNullCheck(AST ast, IVariableBinding var, boolean equal) {
-    NullLiteral nullNode = ast.newNullLiteral();
-    Types.addBinding(nullNode, ast.resolveWellKnownType("java.lang.Object"));
-    return newInfixExpression(
-        ast, newSimpleName(ast, var),
-        equal ? InfixExpression.Operator.EQUALS : InfixExpression.Operator.NOT_EQUALS, nullNode,
-        "boolean");
-  }
-
-  public static InstanceofExpression newInstanceofExpression(AST ast, Expression lhs, Type rhs) {
+  public static InstanceofExpression newInstanceofExpression(
+      AST ast, Expression lhs, ITypeBinding type) {
     InstanceofExpression expr = ast.newInstanceofExpression();
     expr.setLeftOperand(lhs);
-    expr.setRightOperand(rhs);
+    expr.setRightOperand(newType(ast, type));
     Types.addBinding(expr, ast.resolveWellKnownType("boolean"));
     return expr;
+  }
+
+  public static CastExpression newCastExpression(AST ast, Expression expr, ITypeBinding type) {
+    CastExpression cast = ast.newCastExpression();
+    cast.setExpression(expr);
+    cast.setType(newType(ast, type));
+    Types.addBinding(cast, type);
+    return cast;
+  }
+
+  public static ThisExpression newThisExpression(AST ast, ITypeBinding type) {
+    ThisExpression node = ast.newThisExpression();
+    Types.addBinding(node, type);
+    return node;
   }
 
   private static Expression makeLiteralInternal(AST ast, Object value) {
@@ -262,5 +344,48 @@ public final class ASTFactory {
     Expression literal = makeLiteralInternal(ast, value);
     Types.addBinding(literal, type);
     return literal;
+  }
+
+  public static Expression makeIntLiteral(AST ast, int i) {
+    return makeLiteral(ast, Integer.valueOf(i), ast.resolveWellKnownType("int"));
+  }
+
+  public static BooleanLiteral newBooleanLiteral(AST ast, boolean value) {
+    BooleanLiteral node = ast.newBooleanLiteral(value);
+    Types.addBinding(node, ast.resolveWellKnownType("boolean"));
+    return node;
+  }
+
+  public static NullLiteral newNullLiteral(AST ast) {
+    NullLiteral node = ast.newNullLiteral();
+    Types.addBinding(node, ast.resolveWellKnownType("java.lang.Object"));
+    return node;
+  }
+
+  public static TypeLiteral newTypeLiteral(AST ast, ITypeBinding type) {
+    TypeLiteral literal = ast.newTypeLiteral();
+    literal.setType(newType(ast, type));
+    Types.addBinding(literal, type);
+    return literal;
+  }
+
+  public static Type newType(AST ast, ITypeBinding binding) {
+    Type type;
+    if (binding.isPrimitive()) {
+      type = ast.newPrimitiveType(PrimitiveType.toCode(binding.getName()));
+    } else if (binding.isArray()) {
+      type = ast.newArrayType(newType(ast, binding.getComponentType()));
+    } else {
+      type = ast.newSimpleType(newSimpleName(ast, binding.getErasure()));
+    }
+    Types.addBinding(type, binding);
+    return type;
+  }
+
+  public static ParenthesizedExpression newParenthesizedExpression(AST ast, Expression expr) {
+    ParenthesizedExpression result = ast.newParenthesizedExpression();
+    result.setExpression(expr);
+    Types.addBinding(result, Types.getTypeBinding(expr));
+    return result;
   }
 }

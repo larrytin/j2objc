@@ -16,14 +16,14 @@
 
 package com.google.devtools.j2objc.types;
 
-import com.google.common.collect.Lists;
+import com.google.common.collect.Sets;
+import com.google.devtools.j2objc.util.ASTUtil;
+import com.google.devtools.j2objc.util.BindingUtil;
+import com.google.devtools.j2objc.util.ErrorReportingASTVisitor;
 import com.google.devtools.j2objc.util.NameTable;
 
-import org.eclipse.jdt.core.dom.ASTNode;
-import org.eclipse.jdt.core.dom.ASTVisitor;
-import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
-import org.eclipse.jdt.core.dom.ArrayAccess;
-import org.eclipse.jdt.core.dom.ArrayCreation;
+import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
+import org.eclipse.jdt.core.dom.AnnotationTypeMemberDeclaration;
 import org.eclipse.jdt.core.dom.Assignment;
 import org.eclipse.jdt.core.dom.Assignment.Operator;
 import org.eclipse.jdt.core.dom.CastExpression;
@@ -34,27 +34,31 @@ import org.eclipse.jdt.core.dom.EnumDeclaration;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
+import org.eclipse.jdt.core.dom.IAnnotationBinding;
 import org.eclipse.jdt.core.dom.IBinding;
+import org.eclipse.jdt.core.dom.IMemberValuePairBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.InstanceofExpression;
+import org.eclipse.jdt.core.dom.MarkerAnnotation;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.Modifier;
 import org.eclipse.jdt.core.dom.Name;
+import org.eclipse.jdt.core.dom.NormalAnnotation;
 import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.SimpleName;
-import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
+import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
+import org.eclipse.jdt.core.dom.TryStatement;
 import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.TypeLiteral;
 import org.eclipse.jdt.core.dom.VariableDeclarationExpression;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
 
-import java.util.Iterator;
-import java.util.List;
+import java.util.Set;
 
 /**
  * Collects the set of imports needed to resolve type references in an
@@ -62,57 +66,56 @@ import java.util.List;
  *
  * @author Tom Ball
  */
-public class ImplementationImportCollector extends HeaderImportCollector {
-  private final List<Import> declaredTypes = Lists.newArrayList();
+public class ImplementationImportCollector extends ErrorReportingASTVisitor {
 
-  public ImplementationImportCollector() {
-    super(true);
+  private String mainTypeName;
+  private Set<Import> imports = Sets.newLinkedHashSet();
+  private Set<Import> declaredTypes = Sets.newHashSet();
+
+  public void collect(CompilationUnit unit, String sourceFileName) {
+    mainTypeName = NameTable.getMainTypeName(unit, sourceFileName);
+    run(unit);
+    for (Import imp : declaredTypes) {
+      imports.remove(imp);
+    }
   }
 
-  @Override
-  public void collect(CompilationUnit unit, String sourceFileName) {
-    super.collect(unit, sourceFileName);
-    getDeclaredTypes(unit);
-    Iterator<Import> imports = getImports().iterator();
-    while (imports.hasNext()) {
-      Import imp = imports.next();
-      if (declaredTypes.contains(imp)) {
-        imports.remove();
-      }
+  public Set<Import> getImports() {
+    return imports;
+  }
+
+  private void addImports(Type type) {
+    if (type != null) {
+      addImports(Types.getTypeBinding(type));
     }
+  }
+
+  private void addImports(ITypeBinding type) {
+    Import.addImports(type, imports);
   }
 
   // Keep track of any declared types to avoid invalid imports.  The
   // exception is the main type, as it's needed to import the matching
   // header file.
-  private void getDeclaredTypes(ASTNode node) {
-    node.accept(new ASTVisitor() {
-      @Override
-      public void endVisit(TypeDeclaration node) {
-        declareType(node, mainTypeName);
-      }
-
-      @Override
-      public void endVisit(EnumDeclaration node) {
-        declareType(node, mainTypeName + "Enum");
-      }
-
-      private void declareType(AbstractTypeDeclaration type, String mainType) {
-        ITypeBinding binding = Types.getTypeBinding(type);
-        boolean isMain = NameTable.getFullName(binding).equals(mainType);
-        if (!isMain) {
-          declaredTypes.add(getReference(binding));
-        }
-      }
-    });
+  private void addDeclaredType(ITypeBinding type, boolean isEnum) {
+    if (type != null
+        && !NameTable.getFullName(type).equals(mainTypeName + (isEnum ? "Enum" : ""))) {
+      Import.addImports(type, declaredTypes);
+    }
   }
 
   @Override
-  public boolean visit(ArrayAccess node) {
-    ITypeBinding componentType = Types.getTypeBinding(node);
-    addReference(componentType);
-    addReference(Types.resolveArrayType(componentType));
-    return super.visit(node);
+  public boolean visit(AnnotationTypeDeclaration node) {
+    ITypeBinding type = Types.getTypeBinding(node);
+    addImports(type);
+    addDeclaredType(type, false);
+    return true;
+  }
+
+  @Override
+  public boolean visit(AnnotationTypeMemberDeclaration node) {
+    addImports(node.getType());
+    return true;
   }
 
   @Override
@@ -122,38 +125,26 @@ public class ImplementationImportCollector extends HeaderImportCollector {
         Types.isBooleanType(Types.getTypeBinding(node.getRightHandSide()))) {
       // Implicit conversion from boolean -> String translates into a
       // Boolean.toString(...) call, so add a reference to java.lang.Boolean.
-      addReference(node.getAST().resolveWellKnownType("java.lang.Boolean"));
+      addImports(node.getAST().resolveWellKnownType("java.lang.Boolean"));
     }
-    return super.visit(node);
-  }
-
-  @Override
-  public boolean visit(ArrayCreation node) {
-    ITypeBinding type = Types.getTypeBinding(node);
-    addReference(type);
-    int dim = node.dimensions().size();
-    for (int i = 0; i < dim; i++) {
-      type = type.getComponentType();
-      addReference(type);
-    }
-    return super.visit(node);
+    return true;
   }
 
   @Override
   public boolean visit(CastExpression node) {
-    addReference(node.getType());
-    return super.visit(node);
+    addImports(node.getType());
+    return true;
   }
 
   @Override
   public boolean visit(CatchClause node) {
-    addReference(node.getException().getType());
-    return super.visit(node);
+    addImports(node.getException().getType());
+    return true;
   }
 
   @Override
   public boolean visit(ClassInstanceCreation node) {
-    addReference(node.getType());
+    addImports(node.getType());
     IMethodBinding binding = Types.getMethodBinding(node);
     if (binding != null) {
       ITypeBinding[] parameterTypes = binding.getParameterTypes();
@@ -168,47 +159,62 @@ public class ImplementationImportCollector extends HeaderImportCollector {
         ITypeBinding actualType = Types.getTypeBinding(node.arguments().get(i));
         if (!parameterType.equals(actualType) &&
             actualType.isAssignmentCompatible(parameterType)) {
-          addReference(actualType);
+          addImports(actualType);
         } else {
-          addReference(parameterType);
+          addImports(parameterType);
         }
       }
     }
-    return super.visit(node);
+    return true;
+  }
+
+  @Override
+  public boolean visit(TryStatement node) {
+    if (ASTUtil.getResources(node).size() > 0) {
+      addImports(Types.mapTypeName("java.lang.Throwable"));
+    }
+    return true;
   }
 
   @Override
   public boolean visit(TypeLiteral node) {
-    addReference(node.getType());
-    return super.visit(node);
+    ITypeBinding type = Types.getTypeBinding(node.getType());
+    if (type.isPrimitive()) {
+      addImports(Types.getWrapperType(type));
+    } else {
+      addImports(type);
+      addImports(Types.resolveIOSType("IOSClass"));
+    }
+    return false;
   }
 
   @Override
   public boolean visit(EnumDeclaration node) {
-    addReference(Types.getTypeBinding(node));
-    addReference("JavaLangIllegalArgumentException", "java.lang.IllegalArgumentException", false);
+    ITypeBinding type = Types.getTypeBinding(node);
+    addImports(type);
+    addDeclaredType(type, true);
+    addImports(Types.resolveIOSType("IOSClass"));
+    addImports(GeneratedTypeBinding.newTypeBinding("java.lang.IllegalArgumentException",
+        Types.resolveJavaType("java.lang.RuntimeException"), false));
     return true;
   }
 
   @Override
   public boolean visit(FieldAccess node) {
-    addReference(Types.getTypeBinding(node.getName()));
+    addImports(Types.getTypeBinding(node.getName()));
     return true;
   }
 
   @Override
   public boolean visit(FieldDeclaration node) {
-    // non-private references are gathered by the header file collector
-    if (Modifier.isPrivate(node.getModifiers())) {
-      addReference(node.getType());
-    }
-    return super.visit(node);
+    addImports(node.getType());
+    return true;
   }
 
   @Override
   public boolean visit(InstanceofExpression node) {
-    addReference(node.getRightOperand());
-    return super.visit(node);
+    addImports(Types.getTypeBinding(node.getRightOperand()));
+    return true;
   }
 
   @Override
@@ -219,9 +225,7 @@ public class ImplementationImportCollector extends HeaderImportCollector {
           Types.isBooleanType(Types.getTypeBinding(node.getRightOperand()))) {
         needsImport = true;
       } else {
-        @SuppressWarnings("unchecked")
-        List<Expression> extendedExpressions = node.extendedOperands();  // Safe by definition
-        for (Expression extendedExpression : extendedExpressions) {
+        for (Expression extendedExpression : ASTUtil.getExtendedOperands(node)) {
           if (Types.isBooleanType(Types.getTypeBinding(extendedExpression))) {
             needsImport = true;
             break;
@@ -232,45 +236,46 @@ public class ImplementationImportCollector extends HeaderImportCollector {
       if (needsImport) {
         // Implicit conversion from boolean -> String translates into a
         // Boolean.toString(...) call, so add a reference to java.lang.Boolean.
-        addReference(node.getAST().resolveWellKnownType("java.lang.Boolean"));
+        addImports(node.getAST().resolveWellKnownType("java.lang.Boolean"));
       }
     }
-    return super.visit(node);
+    return true;
+  }
+
+  @Override
+  public boolean visit(MarkerAnnotation node) {
+    addDefaultValueTypes(Types.getAnnotationBinding(node));
+    return true;
   }
 
   @Override
   public boolean visit(MethodDeclaration node) {
-    addReference(node.getReturnType2());
-    if (node.resolveBinding() != null && node.resolveBinding().isVarargs()) {
-      addReference(Types.resolveIOSType("IOSObjectArray"));
+    addImports(node.getReturnType2());
+    IMethodBinding binding = Types.getMethodBinding(node);
+    for (ITypeBinding paramType : binding.getParameterTypes()) {
+      addImports(paramType);
     }
-    for (Iterator<?> iterator = node.parameters().iterator(); iterator.hasNext(); ) {
-      Object o = iterator.next();
-      if (o instanceof SingleVariableDeclaration) {
-        addReference(((SingleVariableDeclaration) o).getType());
-      } else {
-        throw new AssertionError("unknown AST type: " + o.getClass());
-      }
+    for (ITypeBinding exceptionType : binding.getExceptionTypes()) {
+      addImports(exceptionType);
+      addImports(Types.resolveIOSType("IOSClass"));
     }
-    return super.visit(node);
+    return true;
   }
 
   @Override
   public boolean visit(MethodInvocation node) {
     IMethodBinding methodBinding = Types.getMethodBinding(node);
-    addReference(methodBinding.getReturnType());
+    addImports(methodBinding.getReturnType());
     // Check for vararg method
     IMethodBinding binding = Types.getMethodBinding(node);
-    if (binding != null && binding.isVarargs()) {
-      addReference(Types.resolveIOSType("IOSObjectArray"));
-    } else if (binding != null) {
+    if (binding != null) {
       ITypeBinding[] parameterTypes = binding.getParameterTypes();
       for (int i = 0; i < parameterTypes.length; i++) {
         ITypeBinding parameterType = parameterTypes[i];
         ITypeBinding actualType = Types.getTypeBinding(node.arguments().get(i));
         if (!parameterType.equals(actualType) &&
             actualType.isAssignmentCompatible(parameterType)) {
-          addReference(actualType);
+          addImports(actualType);
         }
       }
     }
@@ -281,55 +286,50 @@ public class ImplementationImportCollector extends HeaderImportCollector {
       if (binding != null) {
         ITypeBinding typeBinding = binding.getDeclaringClass();
         if (typeBinding != null) {
-          addReference(typeBinding);
+          addImports(typeBinding);
         }
       }
     } else {
       IMethodBinding receiver = Types.getMethodBinding(expr);
       if (receiver != null && !receiver.isConstructor()) {
-        addReference(receiver.getReturnType());
+        addImports(receiver.getReturnType());
       }
       if (receiver == null) {
         // Check for class variable or enum constant.
         IVariableBinding var = Types.getVariableBinding(expr);
         if (var == null || var.isEnumConstant()) {
-          addReference(Types.getTypeBinding(expr));
+          addImports(Types.getTypeBinding(expr));
         } else {
-          addReference(var.getType());
+          addImports(var.getType());
         }
       }
     }
     while (expr != null && expr instanceof Name) {
-      if (methodBinding instanceof IOSMethodBinding) {
-        // true for mapped methods
-        IMethodBinding resolvedBinding = Types.resolveInvocationBinding(node);
-        if (resolvedBinding != null) {
-          addReference(resolvedBinding.getDeclaringClass());
-          break;
-        }
-      }
       ITypeBinding typeBinding = Types.getTypeBinding(expr);
       if (typeBinding != null && typeBinding.isClass()) { // if class literal
-        addReference(typeBinding);
+        addImports(typeBinding);
         break;
       }
       if (expr instanceof QualifiedName) {
         expr = ((QualifiedName) expr).getQualifier();
-        if (expr.resolveTypeBinding() == null) {
-          break;
-        }
       } else {
         break;
       }
     }
-    return super.visit(node);
+    return true;
+  }
+
+  @Override
+  public boolean visit(NormalAnnotation node) {
+    addDefaultValueTypes(Types.getAnnotationBinding(node));
+    return true;
   }
 
   @Override
   public boolean visit(QualifiedName node) {
     IBinding type = Types.getTypeBinding(node);
     if (type != null) {
-      addReference((ITypeBinding) type);
+      addImports((ITypeBinding) type);
     }
     return true;
   }
@@ -339,51 +339,50 @@ public class ImplementationImportCollector extends HeaderImportCollector {
     IVariableBinding var = Types.getVariableBinding(node);
     if (var != null && Modifier.isStatic(var.getModifiers())) {
       ITypeBinding declaringClass = var.getDeclaringClass();
-      addReference(declaringClass);
+      addImports(declaringClass);
     }
+    ITypeBinding type = Types.getTypeBinding(node);
+    if (BindingUtil.isRuntimeAnnotation(type)) {
+      addImports(type);
+      addImports(Types.resolveIOSType("IOSClass"));
+    }
+    return true;
+  }
+
+  @Override
+  public boolean visit(SingleMemberAnnotation node) {
+    addDefaultValueTypes(Types.getAnnotationBinding(node));
     return true;
   }
 
   @Override
   public boolean visit(TypeDeclaration node) {
     ITypeBinding type = Types.getTypeBinding(node);
-    addReference(type);
-    if (Types.isJUnitTest(type)) {
-      addReference("JUnitRunner", "JUnitRunner", true);
-    }
+    addImports(type);
+    addDeclaredType(type, false);
     return true;
   }
 
   @Override
   public boolean visit(VariableDeclarationExpression node) {
     Type type = node.getType();
-    addReference(type);
-    return super.visit(node);
+    addImports(type);
+    return true;
   }
 
   @Override
   public boolean visit(VariableDeclarationStatement node) {
-    addReference(node.getType());
-    return super.visit(node);
+    addImports(node.getType());
+    return true;
   }
 
-  @Override
-  protected void addReference(ITypeBinding binding) {
-    // There is similar code in gen/StatementGenerator, but here
-    // recursion is used to tease out the references in nested
-    // generic type declarations, which isn't needed when
-    // generating statements.
-    if (binding != null && !Types.isVoidType(binding) && !binding.isAnnotation()) {
-      if (binding.isWildcardType()) {
-        addReference(binding.getBound());
-      } else if (binding.isCapture()) {
-        addReference(binding.getWildcard());
-      } else {
-        assert (!binding.isCapture() && !binding.isWildcardType());
-        super.addReference(binding);
-      }
-      for (ITypeBinding typeArg : binding.getTypeArguments()) {
-        addReference(typeArg);
+  private void addDefaultValueTypes(IAnnotationBinding binding) {
+    for (IMemberValuePairBinding memberValuePair : binding.getAllMemberValuePairs()) {
+      if (memberValuePair.isDefault()) {
+        Object value = memberValuePair.getValue();
+        if (value instanceof IVariableBinding) {
+          addImports(((IVariableBinding) value).getType());
+        }
       }
     }
   }

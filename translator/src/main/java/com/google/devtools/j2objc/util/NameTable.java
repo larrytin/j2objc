@@ -16,16 +16,14 @@
 
 package com.google.devtools.j2objc.util;
 
+import com.google.common.base.Joiner;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.devtools.j2objc.Options;
-import com.google.devtools.j2objc.types.IOSTypeBinding;
 import com.google.devtools.j2objc.types.Types;
 
-import org.eclipse.jdt.core.dom.AST;
-import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
-import org.eclipse.jdt.core.dom.ArrayType;
 import org.eclipse.jdt.core.dom.CompilationUnit;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.IMethodBinding;
@@ -34,19 +32,11 @@ import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.PackageDeclaration;
-import org.eclipse.jdt.core.dom.ParameterizedType;
 import org.eclipse.jdt.core.dom.PrimitiveType;
-import org.eclipse.jdt.core.dom.QualifiedType;
 import org.eclipse.jdt.core.dom.SimpleName;
-import org.eclipse.jdt.core.dom.SimplePropertyDescriptor;
-import org.eclipse.jdt.core.dom.SimpleType;
-import org.eclipse.jdt.core.dom.Type;
-import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
 import java.io.File;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +52,7 @@ public class NameTable {
   private static NameTable instance;
   private final Map<IBinding, String> renamings = Maps.newHashMap();
 
+  public static final String INIT_NAME = "init";
   public static final String CLINIT_NAME = "initialize";
 
   public static final String ID_TYPE = "id";
@@ -323,81 +314,122 @@ public class NameTable {
     return primitiveTypeToObjC(code.toString());
   }
 
-  private static String primitiveTypeToObjC(String javaName) {
-    if (javaName.equals("boolean")) {
-      return "BOOL"; // defined in NSObject.h
+  private static final ImmutableMap<String, String> PRIMITIVE_TYPE_MAP =
+      ImmutableMap.<String, String>builder()
+      .put("boolean", "BOOL")
+      .put("byte", "char")
+      .put("char", "unichar")
+      .put("short", "short int")
+      .put("long", "long long int")
+      .build();
+
+  public static String primitiveTypeToObjC(String javaName) {
+    String result = PRIMITIVE_TYPE_MAP.get(javaName);
+    return result != null ? result : javaName;
+  }
+
+  private static final ImmutableMap<String, String> PRIMITIVE_TYPE_KEYWORD_MAP =
+      ImmutableMap.<String, String>builder()
+      .put("boolean", "BOOL")
+      .put("byte", "char")
+      .put("char", "unichar")
+      .put("short", "shortInt")
+      .put("long", "longInt")
+      .build();
+
+  public static String getPrimitiveTypeParameterKeyword(String javaName) {
+    String result = PRIMITIVE_TYPE_KEYWORD_MAP.get(javaName);
+    return result != null ? result : javaName;
+  }
+
+  // TODO(user): See whether the logic in this method can be simplified.
+  //     Also, what about type variables?
+  private static String getArrayTypeParameterKeyword(ITypeBinding elementType, int dimensions) {
+    if (elementType.isParameterizedType()) {
+      elementType = elementType.getErasure();
     }
-    if (javaName.equals("byte")) {
-      return "char";
+    if (elementType.isCapture()) {
+      elementType = elementType.getWildcard();
     }
-    if (javaName.equals("char")) {
-      return "unichar";
+    if (elementType.isWildcardType()) {
+      ITypeBinding bound = elementType.getBound();
+      if (bound != null) {
+        elementType = bound;
+      }
     }
-    if (javaName.equals("short")) {
-      return "short int";
+    String name = getFullName(elementType) + "Array";
+    if (dimensions > 1) {
+      name += dimensions;
     }
-    if (javaName.equals("long")) {
-      return "long long int";
+    return name;
+  }
+
+  private static boolean isIdType(ITypeBinding type) {
+    return type == Types.resolveIOSType("id") || type == Types.resolveIOSType("NSObject")
+        || Types.isJavaObjectType(type);
+  }
+
+  private static String getParameterTypeKeyword(ITypeBinding type) {
+    if (isIdType(type) || type.isTypeVariable()) {
+      return ID_TYPE;
+    } else if (type.isPrimitive()) {
+      return getPrimitiveTypeParameterKeyword(type.getName());
+    } else if (type.isArray()) {
+      return getArrayTypeParameterKeyword(type.getElementType(), type.getDimensions());
     }
-    // type name unchanged for int, float, double, and void
-    return javaName;
+    return getFullName(type);
+  }
+
+  public static String parameterKeyword(ITypeBinding type) {
+    return "with" + capitalize(getParameterTypeKeyword(type));
   }
 
   /**
-   * Convert a Java type into an equivalent Objective-C type.
+   * Convert a Java type to an equivalent Objective-C type with type variables
+   * resolved to their bounds.
    */
-  public static String javaTypeToObjC(Type type, boolean includeInterfaces) {
-    if (type instanceof PrimitiveType) {
-      return primitiveTypeToObjC((PrimitiveType) type);
-    }
-    if (type instanceof ParameterizedType) {
-      type = ((ParameterizedType) type).getType();  // erase parameterized type
-    }
-    if (type instanceof ArrayType) {
-      ITypeBinding arrayBinding = Types.getTypeBinding(type);
-      if (arrayBinding != null) {
-        ITypeBinding elementType = arrayBinding.getElementType();
-        return Types.resolveArrayType(elementType).getName();
+  public static String getSpecificObjCType(ITypeBinding type) {
+    if (type.isTypeVariable()) {
+      ITypeBinding[] bounds = type.getTypeBounds();
+      while (bounds.length > 0 && bounds[0].isTypeVariable()) {
+        type = bounds[0];
+        bounds = type.getTypeBounds();
       }
+      return constructObjCType(bounds);
     }
-    ITypeBinding binding = Types.getTypeBinding(type);
-    return javaTypeToObjC(binding, includeInterfaces);
-  }
-
-  public static String javaTypeToObjC(ITypeBinding binding, boolean includeInterfaces) {
-    if (binding.isInterface() && !includeInterfaces || binding == Types.resolveIOSType("id") ||
-        binding == Types.resolveIOSType("NSObject") || Types.isJavaObjectType(binding)) {
-      return NameTable.ID_TYPE;
-    }
-    if (binding.isTypeVariable()) {
-      binding = binding.getErasure();
-      if (Types.isJavaObjectType(binding) || binding.isInterface()) {
-        return NameTable.ID_TYPE;
-      }
-      // otherwise fall-through
-    }
-    return getFullName(binding);
+    return getObjCType(type);
   }
 
   /**
-   * Convert a Java type reference into an equivalent Objective-C type.
+   * Convert a Java type to an equivalent Objective-C type with type variables
+   * converted to "id" regardless of their bounds.
    */
-  public static String javaRefToObjC(Type type) {
-    return javaRefToObjC(Types.getTypeBinding(type));
-  }
-
-  public static String javaRefToObjC(ITypeBinding type) {
+  public static String getObjCType(ITypeBinding type) {
+    if (type.isTypeVariable()) {
+      return ID_TYPE;
+    }
     if (type.isPrimitive()) {
       return primitiveTypeToObjC(type.getName());
     }
-    String typeName = javaTypeToObjC(type, false);
-    if (typeName.equals(NameTable.ID_TYPE) || Types.isJavaVoidType(type)) {
-      if (type.isInterface()) {
-        return String.format("%s<%s>", ID_TYPE, getFullName(type));
+    return constructObjCType(type.getErasure());
+  }
+
+  private static String constructObjCType(ITypeBinding... types) {
+    String classType = null;
+    List<String> interfaces = Lists.newArrayListWithCapacity(types.length);
+    for (ITypeBinding type : types) {
+      if (type == null || isIdType(type) || Types.isJavaVoidType(type)) {
+        continue;
       }
-      return NameTable.ID_TYPE;
+      if (type.isInterface()) {
+        interfaces.add(getFullName(type));
+      } else {
+        assert classType == null;  // Can only have one class type.
+        classType = getFullName(type);
+      }
     }
-    return typeName + " *";
+    String protocols = interfaces.isEmpty() ? "" : "<" + Joiner.on(", ").join(interfaces) + ">";
+    return classType == null ? ID_TYPE + protocols : classType + protocols + " *";
   }
 
   /**
@@ -442,9 +474,6 @@ public class NameTable {
   }
 
   public static String getFullName(ITypeBinding binding) {
-    if (binding.isPrimitive()) {
-      return primitiveTypeToObjC(binding.getName());
-    }
     binding = Types.mapType(binding.getErasure());  // Make sure type variables aren't included.
     String suffix = binding.isEnum() ? "Enum" : "";
     String prefix = "";
@@ -463,57 +492,11 @@ public class NameTable {
   }
 
   /**
-   * Returns the full name of a type declaration's superclass.
-   */
-  public static String getSuperClassName(TypeDeclaration typeDecl) {
-    Type superclass = typeDecl.getSuperclassType();
-    if (superclass instanceof ParameterizedType) {
-      superclass = ((ParameterizedType) superclass).getType();
-    }
-    if (superclass instanceof SimpleType || superclass instanceof QualifiedType) {
-      ITypeBinding binding = Types.getTypeBinding(superclass).getErasure();
-      String typeName = binding instanceof IOSTypeBinding ? binding.getQualifiedName()
-          : getFullName(binding);
-      return Types.mapSimpleTypeName(typeName);
-    }
-    return "NSObject";
-  }
-
-  /**
    * Returns a "Type_method" function name for static methods, such as from
    * enum types.
    */
   public static String makeFunctionName(AbstractTypeDeclaration cls, MethodDeclaration method) {
     return getFullName(cls) + '_' + method.getName().getIdentifier();
-  }
-
-  /**
-   * Returns a SimpleName for an identifier that may not be a legal
-   * Java identifier but is for iOS.  For example, JDT doesn't allow
-   * Java keywords such as "class" to be used as names.
-   */
-  public static SimpleName unsafeSimpleName(String identifier, AST ast) {
-    SimpleName name = ast.newSimpleName("foo");
-    try {
-      Field field = SimpleName.class.getDeclaredField("identifier");
-      field.setAccessible(true);
-
-      Class<?>[] argTypes = new Class[] { SimplePropertyDescriptor.class };
-      Object[] args = new Object[] { SimpleName.IDENTIFIER_PROPERTY };
-      Method preValueChange = ASTNode.class.getDeclaredMethod("preValueChange", argTypes);
-      Method postValueChange = ASTNode.class.getDeclaredMethod("postValueChange", argTypes);
-      preValueChange.setAccessible(true);
-      postValueChange.setAccessible(true);
-
-      preValueChange.invoke(name, args);
-      field.set(name, identifier);
-      postValueChange.invoke(name, args);
-    } catch (Exception e) {
-      // should never happen, since only the one known class is manipulated
-      e.printStackTrace();
-      System.exit(1);
-    }
-    return name;
   }
 
   public static boolean isReservedName(String name) {
@@ -562,33 +545,6 @@ public class NameTable {
 
   public static String getPrimitiveConstantName(IVariableBinding constant) {
     return String.format("%s_%s", getFullName(constant.getDeclaringClass()), constant.getName());
-  }
-
-  public static String getParameterTypeName(String typeName, ITypeBinding typeBinding) {
-    if (typeName.equals("long long int") || typeName.equals("long")) {
-      typeName = "LongInt";   // avoid name conflict with java.lang.Long
-    } else if (typeName.equals("short int") || typeName.equals("short")) {
-      typeName = "ShortInt";  // or java.lang.Short
-    } else if (typeBinding.isArray()) {
-      ITypeBinding elementType = typeBinding.getElementType();
-      if (elementType.isPrimitive()) {
-        elementType = Types.getWrapperType(elementType);
-      }
-      if (elementType.isParameterizedType()) {
-        elementType = elementType.getErasure();
-      }
-      if (elementType.isCapture()) {
-        elementType = elementType.getWildcard();
-      }
-      if (elementType.isWildcardType()) {
-        ITypeBinding bound = elementType.getBound();
-        if (bound != null) {
-          elementType = bound;
-        }
-      }
-      typeName = getFullName(elementType) + "Array";
-    }
-    return typeName;
   }
 
   public static String javaFieldToObjC(String fieldName) {

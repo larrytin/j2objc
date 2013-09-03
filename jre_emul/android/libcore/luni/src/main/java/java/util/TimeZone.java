@@ -23,6 +23,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /*-[
+#import "IOSClass.h"
 #import "java/util/SimpleTimeZone.h"
 ]-*/
 
@@ -526,13 +527,13 @@ public abstract class TimeZone implements Serializable, Cloneable {
         JavaLangNullPointerException *npe = [[JavaLangNullPointerException alloc] init];
         @throw AUTORELEASE(npe);
       }
-      [self setID:id_];
+      JavaUtilTimeZone_set_ID_(self, id_);
       NSTimeZone *tz = [NSTimeZone timeZoneWithAbbreviation:id_];
       if (!tz) {
         tz = [NSTimeZone timeZoneWithName:id_];
       }
       if (tz) {
-        self.nativeTimeZone = tz;
+        JavaUtilTimeZone_set_nativeTimeZone_(self, tz);
       }
     ]-*/;
 

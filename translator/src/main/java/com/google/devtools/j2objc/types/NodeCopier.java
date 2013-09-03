@@ -21,6 +21,8 @@ import com.google.devtools.j2objc.translate.OuterReferenceResolver;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTMatcher;
 import org.eclipse.jdt.core.dom.ASTNode;
+import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
+import org.eclipse.jdt.core.dom.AnnotationTypeMemberDeclaration;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.ArrayAccess;
 import org.eclipse.jdt.core.dom.ArrayCreation;
@@ -40,9 +42,11 @@ import org.eclipse.jdt.core.dom.FieldAccess;
 import org.eclipse.jdt.core.dom.IBinding;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.InstanceofExpression;
+import org.eclipse.jdt.core.dom.MarkerAnnotation;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.MethodRef;
+import org.eclipse.jdt.core.dom.NormalAnnotation;
 import org.eclipse.jdt.core.dom.NullLiteral;
 import org.eclipse.jdt.core.dom.NumberLiteral;
 import org.eclipse.jdt.core.dom.ParameterizedType;
@@ -54,6 +58,7 @@ import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.QualifiedType;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SimpleType;
+import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
@@ -111,13 +116,20 @@ public class NodeCopier extends ASTMatcher {
     Types.addBinding(to, sharedBinding);
 
     if (from instanceof ASTNode) {
-      ASTNode fromNode = (ASTNode) from;
-      ASTNode replacement = Types.getNode(fromNode);
-      if (replacement != null) {
-        Types.substitute((ASTNode) to, replacement);
-      }
-      OuterReferenceResolver.copyNode(fromNode, (ASTNode) to);
+      OuterReferenceResolver.copyNode((ASTNode) from, (ASTNode) to);
     }
+  }
+
+  @Override
+  public boolean match(AnnotationTypeDeclaration node, Object other) {
+    copy(node, other);
+    return super.match(node, other);
+  }
+
+  @Override
+  public boolean match(AnnotationTypeMemberDeclaration node, Object other) {
+    copy(node, other);
+    return super.match(node, other);
   }
 
   @Override
@@ -147,7 +159,7 @@ public class NodeCopier extends ASTMatcher {
   @Override
   public boolean match(ArrayType node, Object other) {
     copy(node, other);
-    copy(node.getComponentType(), ((ArrayType) other).getComponentType());// fix for ASTMatcher bug
+    copy(node.getComponentType(), ((ArrayType) other).getComponentType()); // fix for ASTMatcher bug
     return super.match(node, other);
   }
 
@@ -232,6 +244,12 @@ public class NodeCopier extends ASTMatcher {
   }
 
   @Override
+  public boolean match(MarkerAnnotation node, Object other) {
+    copy(node, other);
+    return super.match(node, other);
+  }
+
+  @Override
   public boolean match(MethodDeclaration node, Object other) {
     copy(node, other);
     return super.match(node, other);
@@ -245,6 +263,12 @@ public class NodeCopier extends ASTMatcher {
 
   @Override
   public boolean match(MethodRef node, Object other) {
+    copy(node, other);
+    return super.match(node, other);
+  }
+
+  @Override
+  public boolean match(NormalAnnotation node, Object other) {
     copy(node, other);
     return super.match(node, other);
   }
@@ -311,6 +335,12 @@ public class NodeCopier extends ASTMatcher {
 
   @Override
   public boolean match(SimpleType node, Object other) {
+    copy(node, other);
+    return super.match(node, other);
+  }
+
+  @Override
+  public boolean match(SingleMemberAnnotation node, Object other) {
     copy(node, other);
     return super.match(node, other);
   }

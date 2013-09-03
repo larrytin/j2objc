@@ -6,17 +6,21 @@
 //  Copyright 2012 Google, Inc. All rights reserved.
 //
 
-#import "IOSClass.h"
-#import "java/lang/IllegalStateException.h"
-#import "java/util/Collection.h"
-#import "java/util/ConcurrentModificationException.h"
-#import "java/util/HashMap.h"
-#import "java/util/HashMap_PackagePrivate.h"
-#import "java/util/Iterator.h"
-#import "java/util/LinkedHashMap_PackagePrivate.h"
-#import "java/util/Map.h"
-#import "java/util/NoSuchElementException.h"
-#import "java/util/Set.h"
+#include "IOSClass.h"
+#include "java/lang/IllegalStateException.h"
+#include "java/util/Collection.h"
+#include "java/util/ConcurrentModificationException.h"
+#include "java/util/HashMap.h"
+#include "java/util/HashMap_PackagePrivate.h"
+#include "java/util/Iterator.h"
+#include "java/util/LinkedHashMap_PackagePrivate.h"
+#include "java/util/Map.h"
+#include "java/util/NoSuchElementException.h"
+#include "java/util/Set.h"
+
+#if __has_feature(objc_arc)
+#error "JavaUtilLinkedHashMap is not built with ARC"
+#endif
 
 @implementation JavaUtilLinkedHashMap
 
@@ -302,10 +306,9 @@
   head_ = tail_ = nil;
 }
 
-- (void)copyAllPropertiesTo:(id)copy {
-  [super copyAllPropertiesTo:copy];
-  JavaUtilLinkedHashMap *typedCopy = (JavaUtilLinkedHashMap *) copy;
-  typedCopy.accessOrder = accessOrder_;
+- (void)copyAllFieldsTo:(JavaUtilLinkedHashMap *)other {
+  [super copyAllFieldsTo:other];
+  other.accessOrder = accessOrder_;
 }
 
 @end
@@ -407,7 +410,7 @@
 
 - (id)next {
   [self makeNext];
-  return ((JavaUtilLinkedHashMap_LinkedHashMapEntry *) NIL_CHK(currentEntry_)).key;
+  return ((JavaUtilLinkedHashMap_LinkedHashMapEntry *) nil_chk(currentEntry_))->key_;
 }
 
 @end
@@ -421,7 +424,7 @@
 
 - (id)next {
   [self makeNext];
-  return ((JavaUtilLinkedHashMap_LinkedHashMapEntry *) NIL_CHK(currentEntry_)).value;
+  return ((JavaUtilLinkedHashMap_LinkedHashMapEntry *) nil_chk(currentEntry_))->value_;
 }
 
 @end

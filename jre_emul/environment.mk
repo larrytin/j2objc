@@ -26,12 +26,13 @@
 #                           (-Wflag-name) or turn off warnings that are set
 #                           (-Wno-flag-name).
 # CLANG_ENABLE_OBJC_ARC=YES Translate and build with ARC
+# MAX_STACK_FRAMES          The maximum number of exception stack trace frames
+# NO_STACK_FRAME_SYMBOLS    If set, exception stack traces only have addresses
 #
 # Author: Tom Ball
 
 APACHE_HARMONY_BASE = apache_harmony/classlib/modules
 JRE_ROOT = $(APACHE_HARMONY_BASE)/luni/src/main/java
-JRE_ANNOTATION_ROOT = $(APACHE_HARMONY_BASE)/annotation/src/main/java
 JRE_CONCURRENT_ROOT = $(APACHE_HARMONY_BASE)/concurrent/src/main/java
 JRE_KERNEL_ROOT = $(APACHE_HARMONY_BASE)/luni-kernel/src/main/java
 JRE_MATH_ROOT = $(APACHE_HARMONY_BASE)/math/src/main/java
@@ -42,18 +43,19 @@ JRE_NIO_TEST_ROOT = $(APACHE_HARMONY_BASE)/nio/src/test/java/common
 TEST_SUPPORT_ROOT = $(APACHE_HARMONY_BASE)/../support/src/test/java
 MATH_TEST_SUPPORT_ROOT = $(APACHE_HARMONY_BASE)/math/src/test/java/tests/api
 REGEX_TEST_ROOT = $(APACHE_HARMONY_BASE)/regex/src/test/java
+CONCURRENT_TEST_ROOT = $(APACHE_HARMONY_BASE)/concurrent/src/test/java
 
 ANDROID_BASE = android/libcore
 ANDROID_JRE_ROOT = $(ANDROID_BASE)/luni/src/main/java
-ANDROID_JRE_TEST_ROOT = $(ANDROID_BASE)/luni/src/test/java/tests/api
+ANDROID_JRE_TEST_ROOT = $(ANDROID_BASE)/luni/src/test/java
 ANDROID_XML_ROOT = $(ANDROID_BASE)/xml/src/main/java
+
+APPLE_ROOT = apple_apsl
 
 MISC_TEST_ROOT = Tests
 J2OBJC_ROOT = ..
 
 ANDROID_INCLUDE = $(ANDROID_BASE)/include
-ICU4C_I18N_INCLUDE = icu4c/i18n/include
-ICU4C_COMMON_INCLUDE = icu4c/common
 
 include ../make/common.mk
 
@@ -64,6 +66,8 @@ EMULATION_JAR_DIST = $(DIST_JAR_DIR)/jre_emul.jar
 EMULATION_LIB = $(BUILD_DIR)/libjre_emul.a
 EMULATION_LIB_DIST = $(DIST_LIB_DIR)/libjre_emul.a
 XCODE_LIB = $(CONFIGURATION_BUILD_DIR)/libjre_emul.a
+MAIN_LIB = $(BUILD_DIR)/libj2objc_main.a
+MAIN_LIB_DIST = $(DIST_LIB_DIR)/libj2objc_main.a
 EMULATION_CLASS_DIR = Classes
 TESTS_DIR = $(BUILD_DIR)/tests
 STUBS_DIR = stub_classes
@@ -72,12 +76,15 @@ ifndef TRANSLATED_SOURCE_DIR
 TRANSLATED_SOURCE_DIR = $(CLASS_DIR)
 endif
 
-JRE_SRC_ROOTS = $(JRE_ROOT) $(JRE_ANNOTATION_ROOT) $(JRE_CONCURRENT_ROOT) \
+JRE_SRC_ROOTS = $(JRE_ROOT) $(JRE_CONCURRENT_ROOT) \
     $(JRE_KERNEL_ROOT) $(JRE_MATH_ROOT) $(JRE_NIO_ROOT) $(ANDROID_JRE_ROOT) \
-    $(ANDROID_XML_ROOT) $(EMULATION_CLASS_DIR) $(STUBS_DIR)
+    $(ANDROID_XML_ROOT) $(EMULATION_CLASS_DIR)
 JRE_SRC = $(subst $(eval) ,:,$(JRE_SRC_ROOTS))
-TEST_SRC = $(JRE_TEST_ROOT):$(JRE_MATH_TEST_ROOT):$(JRE_NIO_TEST_ROOT):$(TEST_SUPPORT_ROOT):$(MATH_TEST_SUPPORT_ROOT):$(REGEX_TEST_ROOT):$(MISC_TEST_ROOT)
-vpath %.java $(JRE_SRC) $(TEST_SRC)
+TEST_SRC_ROOTS = $(JRE_TEST_ROOT) $(JRE_MATH_TEST_ROOT) $(JRE_NIO_TEST_ROOT) \
+    $(TEST_SUPPORT_ROOT) $(MATH_TEST_SUPPORT_ROOT) $(REGEX_TEST_ROOT) \
+    $(CONCURRENT_TEST_ROOT) $(MISC_TEST_ROOT)
+TEST_SRC = $(subst $(eval) ,:,$(TEST_SRC_ROOTS))
+vpath %.java $(JRE_SRC):$(TEST_SRC):$(STUBS_DIR)
 
 CLANG=$(XCRUN) clang
 
@@ -85,36 +92,38 @@ CLANG=$(XCRUN) clang
 J2OBJC := USE_SYSTEM_BOOT_PATH=TRUE $(DIST_DIR)/j2objc --mem-debug \
    -classpath $(EMULATION_JAR) -d $(TRANSLATED_SOURCE_DIR) $(J2OBJC_DEBUGFLAGS)
 
-# GCC settings, based on Xcode log output
-WARNINGS := $(WARNINGS) -Wno-trigraphs -Wunused-variable -Werror \
-  -Wno-logical-op-parentheses -Wno-bitwise-op-parentheses -Wreturn-type\
-  -Wno-unknown-warning-option
+# Clang warnings
+WARNINGS := $(WARNINGS) -Wall -Werror
 
-# Don't warn for logical/bitwise op precedence
-WARNINGS := $(WARNINGS) -Wno-parentheses
-
-# Workaround for iPhoneSimulator SDK's gcc bug
-ifdef EFFECTIVE_PLATFORM_NAME
-ifneq ($(EFFECTIVE_PLATFORM_NAME), -iphonesimulator)
-WARNINGS := $(WARNINGS) -Wreturn-type
+ifeq ("$(strip $(XCODE_VERSION_MAJOR))", "0500")
+WARNINGS := $(WARNINGS) -Wno-unsequenced
+OBJCFLAGS := -DSET_MIN_IOS_VERSION
 endif
-endif
-
-# Make sure we aren't relying on auto-synthesis for compatibility with older
-# versions of clang.
-WARNINGS := $(WARNINGS) -Wobjc-missing-property-synthesis \
 
 # The -fobjc flags match XCode (a link fails without them because of
 # missing symbols of the form OBJC_CLASS_$_[classname]).
-OBJCFLAGS := $(WARNINGS) -DU_DISABLE_RENAMING=1 \
+OBJCFLAGS := $(WARNINGS) $(OBJCFLAGS) -DU_DISABLE_RENAMING=1 \
   -fobjc-abi-version=2 -fobjc-legacy-dispatch $(DEBUGFLAGS) \
   -I/System/Library/Frameworks/ExceptionHandling.framework/Headers \
-  -I$(ANDROID_INCLUDE) -I$(ICU4C_I18N_INCLUDE) -I$(ICU4C_COMMON_INCLUDE)
+  -I$(ANDROID_INCLUDE) -I$(ICU4C_I18N_INCLUDE) -I$(ICU4C_COMMON_INCLUDE) \
+  -I$(APPLE_ROOT)
 
-ifdef CLANG_ENABLE_OBJC_ARC
+ifdef MAX_STACK_FRAMES
+OBJCFLAGS := $(OBJCFLAGS) -DMAX_STACK_FRAMES=$(MAX_STACK_FRAMES)
+endif
+
+ifdef NO_STACK_FRAME_SYMBOLS
+OBJCFLAGS := $(OBJCFLAGS) -DNO_STACK_FRAME_SYMBOLS=$(NO_STACK_FRAME_SYMBOLS)
+endif
+
+# Settings for classes that need to always compile without ARC.
+OBJCFLAGS_NO_ARC := $(OBJCFLAGS)
+
+ifeq ("$(strip $(CLANG_ENABLE_OBJC_ARC))", "YES")
 J2OBJC := $(J2OBJC) -use-arc
 OBJCFLAGS := $(OBJCFLAGS) -fobjc-arc -fobjc-arc-exceptions \
-  -Wno-unused-value -Wno-arc-bridge-casts-disallowed-in-nonarc
+  -Wno-arc-bridge-casts-disallowed-in-nonarc \
+  -Xclang -fobjc-runtime-has-weak
 endif
 
 # Flags for the static analyzer.

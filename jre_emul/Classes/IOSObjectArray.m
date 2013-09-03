@@ -19,7 +19,10 @@
 //  Created by Tom Ball on 9/9/11.
 //
 
+#import "IOSArrayClass.h"
+#import "IOSClass.h"
 #import "IOSObjectArray.h"
+#import "java/lang/ArrayStoreException.h"
 #import "java/lang/AssertionError.h"
 
 @implementation IOSObjectArray
@@ -40,10 +43,7 @@
 - (id)initWithLength:(NSUInteger)length type:(IOSClass *)type {
   if ((self = [super initWithLength:length])) {
     buffer_ = (id __strong *) calloc(length, sizeof(id));
-    elementType_ = type;
-#if ! __has_feature(objc_arc)
-    [elementType_ retain];
-#endif
+    elementType_ = RETAIN(type);
   }
   return self;
 }
@@ -59,11 +59,7 @@
   if ((self = [self initWithLength:count type:type])) {
     if (objects != nil) {
       for (NSUInteger i = 0; i < count; i++) {
-        id element = objects[i];
-#if ! __has_feature(objc_arc)
-        [element retain];
-#endif
-        buffer_[i] = element;
+        buffer_[i] = RETAIN(objects[i]);
       }
     }
   }
@@ -77,41 +73,6 @@
                                                count:count
                                                 type:type];
   return AUTORELEASE(array);
-}
-
-+ (id)arrayWithType:(IOSClass *)type count:(int)count args:(va_list)args {
-  if (count > 0) {
-    __unsafe_unretained id *objects =
-        (__unsafe_unretained id *) calloc(count, sizeof(id));
-    for (int i = 0; i < count; i++) {
-      objects[i] = va_arg(args, id);
-    }
-    id array = [[self class] arrayWithObjects:objects
-                                        count:count
-                                         type:type];
-    free(objects);
-    return array;
-  } else {
-    return [[self class] arrayWithObjects:nil count:0 type:type];
-  }
-}
-
-+ (id)arrayWithType:(IOSClass *)type count:(int)count, ... {
-  va_list args;
-  va_start(args, count);
-  id result = [self arrayWithType:type count:count args:args];
-  va_end(args);
-  return result;
-}
-
-+ (id)arrayWithClass:(Class)clazz count:(int)count, ... {
-  va_list args;
-  va_start(args, count);
-  id result = [self arrayWithType:[IOSClass classWithClass:clazz]
-                            count:count
-                             args:args];
-  va_end(args);
-  return result;
 }
 
 + (id)arrayWithArray:(IOSObjectArray *)array {
@@ -131,90 +92,153 @@
 }
 
 + (id)arrayWithDimensions:(NSUInteger)dimensionCount
-                  lengths:(NSUInteger *)dimensionLengths
+                  lengths:(const int *)dimensionLengths
                      type:(IOSClass *)type {
-
-  // If dimension of 1, just return a regular array of objects.
-  if (dimensionCount == 1) {
-    NSUInteger size = *dimensionLengths;
-    IOSObjectArray *result = [[[self class] alloc] initWithLength:size
-                                                             type:type];
-    return AUTORELEASE(result);
+  if (dimensionCount == 0) {
+    @throw AUTORELEASE([[JavaLangAssertionError alloc] initWithId:@"invalid dimension count"]);
   }
 
-  // Create an array of arrays, which is recursive to handle additional
-  // dimensions.
-  NSUInteger arraySize = *dimensionLengths;
-  IOSObjectArray *result =
-      [[IOSObjectArray alloc] initWithLength:arraySize type:
-          [IOSClass classWithClass:[IOSObjectArray class]]];
-  result->elementType_ = type;
-#if ! __has_feature(objc_arc)
-  [result->elementType_ retain];
-#endif
-  for (NSUInteger i = 0; i < arraySize; i++) {
-    id subarray = [[self class] arrayWithDimensions:dimensionCount - 1
-                                            lengths:dimensionLengths + 1
-                                               type:type];
-    [result replaceObjectAtIndex:i withObject:subarray];
+  __unsafe_unretained IOSClass *componentTypes[dimensionCount];
+  componentTypes[dimensionCount - 1] = type;
+  for (int i = dimensionCount - 2; i >= 0; i--) {
+    componentTypes[i] = [IOSClass arrayClassWithComponentType:componentTypes[i + 1]];
   }
+  return [self arrayWithDimensions:dimensionCount lengths:dimensionLengths types:componentTypes];
+}
 
-  return AUTORELEASE(result);
++ (id)iosClassWithType:(IOSClass *)type {
+  return [IOSClass arrayClassWithComponentType:type];
+}
+
++ (id)iosClassWithDimensions:(NSUInteger)dimensions type:(IOSClass *)type {
+  IOSClass *result = [IOSClass arrayClassWithComponentType:type];
+  while (--dimensions > 0) {
+    result = [IOSClass arrayClassWithComponentType:result];
+  }
+  return result;
 }
 
 - (id)objectAtIndex:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return buffer_[index];
 }
 
-- (id)replaceObjectAtIndex:(NSUInteger)index withObject:(id)value {
-  IOSArray_checkIndex(self, index);
-#if ! __has_feature(objc_arc)
-  id prev = buffer_[index];
-  [prev autorelease];
-  [value retain];
+__attribute__ ((unused))
+static inline id IOSObjectArray_checkValue(IOSObjectArray *array, id value) {
+#if !defined(J2OBJC_DISABLE_ARRAY_CHECKS)
+  if (value && ![array->elementType_ isInstance:value]) {
+    NSString *msg = [NSString stringWithFormat:
+        @"attempt to add object of type %@ to array with type %@",
+        [[value getClass] getName], [array->elementType_ getName]];
+    @throw AUTORELEASE([[JavaLangArrayStoreException alloc] initWithNSString:msg]);
+  }
 #endif
-  buffer_[index] = value;
   return value;
 }
 
+- (id)replaceObjectAtIndex:(NSUInteger)index withObject:(id)value {
+  IOSArray_checkIndex(size_, index);
+  IOSObjectArray_checkValue(self, value);
+#if ! __has_feature(objc_arc)
+  [buffer_[index] autorelease];
+#endif
+  return buffer_[index] = RETAIN(value);
+}
+
 - (void)getObjects:(NSObject **)buffer length:(NSUInteger)length {
-  IOSArray_checkIndex(self, length - 1);
+  IOSArray_checkIndex(size_, length - 1);
   for (NSUInteger i = 0; i < length; i++) {
     id element = buffer_[i];
     buffer[i] = element;
   }
 }
 
+void CopyWithMemmove(id __strong *buffer, NSUInteger src, NSUInteger dest, NSUInteger length) {
+  NSUInteger releaseStart = dest;
+  NSUInteger releaseEnd = dest + length;
+  NSUInteger retainStart = src;
+  NSUInteger retainEnd = src + length;
+  if (retainEnd > releaseStart && retainEnd <= releaseEnd) {
+    NSUInteger tmp = releaseStart;
+    releaseStart = retainEnd;
+    retainEnd = tmp;
+  } else if (releaseEnd > retainStart && releaseEnd <= retainEnd) {
+    NSUInteger tmp = retainStart;
+    retainStart = releaseEnd;
+    releaseEnd = tmp;
+  }
+#if __has_feature(objc_arc)
+  for (NSUInteger i = releaseStart; i < releaseEnd; i++) {
+    buffer[i] = nil;
+  }
+  // memmove is unsafe for general use in ARC so we must cast the buffer to the
+  // unretained data type void**. Then we must manually correct the retain
+  // counts using bridged casts.
+  void **buffer_unretained = (void *)buffer;
+  memmove(buffer_unretained + dest, buffer_unretained + src, length * sizeof(id));
+  for (NSUInteger i = retainStart; i < retainEnd; i++) {
+    // Use a __bridge_retained cast to trick ARC into retaining the element.
+    void *tmp = (__bridge_retained void *) buffer[i];
+    tmp = nil;  // Avoid unused variable warning.
+  }
+#else
+  for (NSUInteger i = releaseStart; i < releaseEnd; i++) {
+    [buffer[i] autorelease];
+  }
+  memmove(buffer + dest, buffer + src, length * sizeof(id));
+  for (NSUInteger i = retainStart; i < retainEnd; i++) {
+    [buffer[i] retain];
+  }
+#endif
+}
+
+// We can get a significant performance gain for an overlapping arraycopy in ARC
+// by using memmove when the amount of overlap is a large fraction of the moved
+// elements. However, the memmove method is more costly than directly copying
+// each element with a small overlap. This value has been determined
+// experimentally on a OSX desktop device.
+#define ARC_MEMMOVE_OVERLAP_RATIO 15
+
 - (void) arraycopy:(NSRange)sourceRange
        destination:(IOSArray *)destination
             offset:(NSInteger)offset {
-  IOSArray_checkRange(self, sourceRange);
-  IOSArray_checkRange(destination, NSMakeRange(offset, sourceRange.length));
+  IOSArray_checkRange(size_, sourceRange);
+  IOSArray_checkRange(destination->size_, NSMakeRange(offset, sourceRange.length));
   IOSObjectArray *dest = (IOSObjectArray *) destination;
 
-  // Do ranges overlap?
-  if (self == destination && sourceRange.location < offset) {
-    for (int i = sourceRange.length - 1; i >= 0; i--) {
-      id newElement = self->buffer_[i + sourceRange.location];
-#if ! __has_feature(objc_arc)
-      id oldElement = dest->buffer_[i + offset];
-      [oldElement autorelease];
-      [newElement retain];
-#endif
-      dest->buffer_[i + offset] = newElement;
+#if __has_feature(objc_arc)
+  if (self == dest) {
+    int shift = abs(offset - sourceRange.location);
+    if (sourceRange.length > ARC_MEMMOVE_OVERLAP_RATIO * shift) {
+      CopyWithMemmove(buffer_, sourceRange.location, offset, sourceRange.length);
+    } else if (sourceRange.location < offset) {
+      for (int i = sourceRange.length - 1; i >= 0; i--) {
+        buffer_[i + offset] = buffer_[i + sourceRange.location];
+      }
+    } else {
+      for (int i = 0; i < sourceRange.length; i++) {
+        buffer_[i + offset] = buffer_[i + sourceRange.location];
+      }
     }
   } else {
-    for (NSUInteger i = 0; i < sourceRange.length; i++) {
-      id newElement = self->buffer_[i + sourceRange.location];
-#if ! __has_feature(objc_arc)
-      id oldElement = dest->buffer_[i + offset];
-      [oldElement autorelease];
-      [newElement retain];
-#endif
-      dest->buffer_[i + offset] = newElement;
+    for (int i = 0; i < sourceRange.length; i++) {
+      dest->buffer_[i + offset] =
+          IOSObjectArray_checkValue(dest, buffer_[i + sourceRange.location]);
     }
   }
+#else
+  if (self == dest) {
+    CopyWithMemmove(buffer_, sourceRange.location, offset, sourceRange.length);
+  } else {
+    for (int i = 0; i < sourceRange.length; i++) {
+      // TODO(user): We can probably skip this check if the source array
+      // passes an isInstance test on the destination array.
+      id newElement = IOSObjectArray_checkValue(dest, buffer_[i + sourceRange.location]);
+      [dest->buffer_[i + offset] autorelease];
+      dest->buffer_[i + offset] = [newElement retain];
+    }
+  }
+#endif
 }
 
 - (id)copyWithZone:(NSZone *)zone {
@@ -238,10 +262,14 @@
 - (void)dealloc {
 #if ! __has_feature(objc_arc)
   [elementType_ release];
-  for (NSUInteger i = 0; i < size_; i++) {
-    [buffer_[i] release];
-  }
 #endif
+  for (NSUInteger i = 0; i < size_; i++) {
+#if __has_feature(objc_arc)
+    buffer_[i] = nil;
+#else
+    [buffer_[i] release];
+#endif
+  }
   free(buffer_);
 #if ! __has_feature(objc_arc)
   [super dealloc];

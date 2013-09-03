@@ -16,27 +16,19 @@
 
 package com.google.devtools.j2objc.translate;
 
-import com.google.devtools.j2objc.types.GeneratedVariableBinding;
 import com.google.devtools.j2objc.types.Types;
+import com.google.devtools.j2objc.util.ASTUtil;
 import com.google.devtools.j2objc.util.ErrorReportingASTVisitor;
-import com.google.devtools.j2objc.util.NameTable;
 
 import org.eclipse.jdt.core.dom.CastExpression;
-import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
-import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
-import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
-import org.eclipse.jdt.core.dom.MethodInvocation;
-import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
-import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 import org.eclipse.jdt.core.dom.VariableDeclarationStatement;
 
-import java.util.Iterator;
 import java.util.List;
 
 /**
@@ -49,132 +41,62 @@ import java.util.List;
  */
 public class JavaToIOSTypeConverter extends ErrorReportingASTVisitor {
 
+  // TODO(user): Replace visitors below with visitors on the subclasses of Type.
+  private void convertType(Type original) {
+    if (original == null) {
+      return;
+    }
+    ITypeBinding binding = Types.getTypeBinding(original);
+    ITypeBinding newBinding = Types.mapType(binding);
+    if (binding != newBinding) {
+      ASTUtil.setProperty(original, ASTFactory.newType(original.getAST(), newBinding));
+    }
+  }
+
   @Override
-  public boolean visit(TypeDeclaration node) {
+  public void endVisit(TypeDeclaration node) {
     ITypeBinding binding = Types.getTypeBinding(node);
     assert binding == Types.mapType(binding); // don't try to translate the
                                                  // types being mapped
-    Type superClass = node.getSuperclassType();
     if (!node.isInterface()) {
+      Type superClass = node.getSuperclassType();
       if (superClass == null) {
-        node.setSuperclassType(Types.makeType(Types.getNSObject()));
+        node.setSuperclassType(ASTFactory.newType(node.getAST(), Types.getNSObject()));
       } else {
-        binding = Types.getTypeBinding(superClass);
-        if (Types.hasIOSEquivalent(binding)) {
-          ITypeBinding newBinding = Types.mapType(binding);
-          node.setSuperclassType(Types.makeType(newBinding));
-        }
+        convertType(superClass);
       }
     }
-    @SuppressWarnings("unchecked")
-    List<Type> interfaces = node.superInterfaceTypes(); // safe by definition
+    List<Type> interfaces = ASTUtil.getSuperInterfaceTypes(node);
     for (int i = 0; i < interfaces.size(); i++) {
-      Type intrface = interfaces.get(i);
-      binding = Types.getTypeBinding(intrface);
-      if (Types.hasIOSEquivalent(binding)) {
-        ITypeBinding newBinding = Types.mapType(binding);
-        interfaces.set(i, Types.makeType(newBinding));
-      }
+      convertType(interfaces.get(i));
     }
-    return super.visit(node);
   }
 
   @Override
-  public boolean visit(MethodDeclaration node) {
-    IMethodBinding binding = Types.getMethodBinding(node);
-    ITypeBinding returnBinding = binding.getReturnType();
-    ITypeBinding newBinding = Types.mapType(returnBinding);
-    if (returnBinding != newBinding) {
-      node.setReturnType2(Types.makeType(newBinding));
+  public void endVisit(MethodDeclaration node) {
+    convertType(node.getReturnType2());
+    for (SingleVariableDeclaration parameter : ASTUtil.getParameters(node)) {
+      convertType(parameter.getType());
     }
-
-    @SuppressWarnings("unchecked")
-    List<SingleVariableDeclaration> parameters = node.parameters();
-    for (Iterator<SingleVariableDeclaration> iterator = parameters.iterator();
-        iterator.hasNext();) {
-      SingleVariableDeclaration parameter = iterator.next();
-      Type type = parameter.getType();
-      ITypeBinding varBinding = type.resolveBinding();
-      if (varBinding != null) { // true for primitive types
-        newBinding = Types.mapType(varBinding);
-        if (varBinding != newBinding) {
-          parameter.setType(Types.makeType(newBinding));
-        }
-      }
-    }
-    return super.visit(node);
   }
 
   @Override
-  public boolean visit(FieldDeclaration node) {
-    @SuppressWarnings("unchecked")
-    List<VariableDeclarationFragment> vars = node.fragments(); // safe by definition
-    for (VariableDeclarationFragment var : vars) {
-      IVariableBinding binding = Types.getVariableBinding(var);
-      Type newType = Types.makeIOSType(binding.getType());
-      if (newType != null) {
-        ITypeBinding newTypeBinding = Types.getTypeBinding(newType);
-        GeneratedVariableBinding varBinding = new GeneratedVariableBinding(
-            NameTable.getName(binding), binding.getModifiers(), newTypeBinding, true, false,
-            binding.getDeclaringClass(), binding.getDeclaringMethod());
-        Types.addMappedVariable(var, varBinding);
-        node.setType(newType);
-      }
-    }
-    return super.visit(node);
+  public void endVisit(FieldDeclaration node) {
+    convertType(node.getType());
   }
 
   @Override
-  public boolean visit(MethodInvocation node) {
-    Expression receiver = node.getExpression();
-    if (receiver instanceof SimpleName) {
-      String name = ((SimpleName) receiver).getIdentifier();
-      String newName = Types.mapSimpleTypeName(name);
-      if (name != newName) { // identity test
-        SimpleName nameNode = node.getAST().newSimpleName(newName);
-        Types.addBinding(nameNode, Types.getBinding(node));
-        node.setExpression(nameNode);
-      }
-    }
-    return super.visit(node);
+  public void endVisit(SingleVariableDeclaration node) {
+    convertType(node.getType());
   }
 
   @Override
-  public boolean visit(SingleVariableDeclaration node) {
-    ITypeBinding binding = Types.getTypeBinding(node);
-    Type newType = Types.makeIOSType(binding);
-    if (newType != null) {
-      node.setType(newType);
-    }
-    return super.visit(node);
+  public void endVisit(VariableDeclarationStatement node) {
+    convertType(node.getType());
   }
 
   @Override
-  public boolean visit(VariableDeclarationStatement node) {
-    @SuppressWarnings("unchecked")
-    List<VariableDeclarationFragment> vars = node.fragments(); // safe by definition
-    for (VariableDeclarationFragment var : vars) {
-      IVariableBinding binding = Types.getVariableBinding(var);
-      Type newType = Types.makeIOSType(binding.getType());
-      if (newType != null) {
-        ITypeBinding newTypeBinding = Types.getTypeBinding(newType);
-        GeneratedVariableBinding varBinding = new GeneratedVariableBinding(
-            NameTable.getName(binding), binding.getModifiers(), newTypeBinding, false, false,
-            binding.getDeclaringClass(), binding.getDeclaringMethod());
-        Types.addMappedVariable(var, varBinding);
-        node.setType(newType);
-      }
-    }
-
-    return super.visit(node);
-  }
-
-  @Override
-  public boolean visit(CastExpression node) {
-    Type newType = Types.makeIOSType(node.getType());
-    if (newType != null) {
-      node.setType(newType);
-    }
-    return true;
+  public void endVisit(CastExpression node) {
+    convertType(node.getType());
   }
 }

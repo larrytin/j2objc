@@ -38,6 +38,7 @@
 // Return byte at a specified index, throws IndexOutOfBoundsException
 // if out out range.
 - (char)byteAtIndex:(NSUInteger)index;
+- (char *)byteRefAtIndex:(NSUInteger)index;
 
 // Sets byte at a specified index, throws IndexOutOfBoundsException
 // if out out range.  Returns the replacement value.
@@ -51,7 +52,7 @@
           length:(NSUInteger)length;
 
 // Copies the specified native buffer into this array at the specified offset.
-- (void)replaceBytes:(char *)source
+- (void)replaceBytes:(const char *)source
               length:(NSUInteger)length
               offset:(NSUInteger)destOffset;
 

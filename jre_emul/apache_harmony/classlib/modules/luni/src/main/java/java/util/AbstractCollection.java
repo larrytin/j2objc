@@ -17,9 +17,10 @@
 
 package java.util;
 
-/*-{
+/*-[
+#import "IOSClass.h"
 #import "java/lang/NullPointerException.h"
-}-*/
+]-*/
 
 /**
  * Class {@code AbstractCollection} is an abstract implementation of the {@code
@@ -339,7 +340,7 @@ public abstract class AbstractCollection<E> implements Collection<E> {
     public abstract int size();
 
     @Override
-    public native Object[] toArray() /*-{
+    public native Object[] toArray() /*-[
       IOSObjectArray *result =
           [[IOSObjectArray alloc] initWithLength:[self size]
                                             type:[IOSClass classWithClass:[NSObject class]]];
@@ -347,10 +348,10 @@ public abstract class AbstractCollection<E> implements Collection<E> {
       [result autorelease];
 #endif
       return [self toArrayWithNSObjectArray:result];
-    }-*/;
+    ]-*/;
 
     @Override
-    public native <T> T[] toArray(T[] contents) /*-{
+    public native <T> T[] toArray(T[] contents) /*-[
       if (!contents) {
         id exception = [[JavaLangNullPointerException alloc] init];
 #if ! __has_feature(objc_arc)
@@ -373,7 +374,7 @@ public abstract class AbstractCollection<E> implements Collection<E> {
         [contents replaceObjectAtIndex:i++ withObject:[it next]];
       }
       return contents;
-    }-*/;
+    ]-*/;
 
     /**
      * Returns the string representation of this {@code Collection}. The presentation

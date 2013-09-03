@@ -20,9 +20,14 @@ import com.google.devtools.j2objc.GenerationTest;
 import com.google.devtools.j2objc.Options;
 import com.google.devtools.j2objc.types.Types;
 
+import org.eclipse.jdt.core.dom.ASTVisitor;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
+import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
+
+import java.io.IOException;
 
 /**
  * Unit tests for {@link NameTable}.
@@ -86,5 +91,44 @@ public class NameTableTest extends GenerationTest {
     assertEquals("FooBarSomeClass_Inner", NameTable.getFullName(decl));
     ITypeBinding binding = Types.getTypeBinding(decl);
     assertEquals("FooBarSomeClass_Inner", NameTable.getFullName(binding));
+  }
+
+  public void testTypeVariableWithTypeVariableBounds() {
+    String source = "class A<T> { <E extends T> void foo(E e) {} }";
+    CompilationUnit unit = translateType("A", source);
+    final IMethodBinding[] methodBinding = new IMethodBinding[1];
+    unit.accept(new ASTVisitor() {
+      @Override public void endVisit(MethodDeclaration node) {
+        IMethodBinding binding = Types.getMethodBinding(node);
+        if (binding.getName().equals("foo")) {
+          methodBinding[0] = binding;
+        }
+      }
+    });
+    assertNotNull(methodBinding[0]);
+    ITypeBinding paramType = methodBinding[0].getParameterTypes()[0];
+    assertEquals("id", NameTable.getSpecificObjCType(paramType));
+  }
+
+  public void testPrimitiveArrayParameterName() throws IOException {
+    String translation = translateSourceFile("public class A { " +
+        "void foo(int[] value1) {}" +
+        "void foo(Integer[] value2) {}" +
+        "void foo(String[] value3) {}}", "A", "A.h");
+    assertTranslation(translation, "- (void)fooWithIntArray:(IOSIntArray *)value1");
+    assertTranslation(translation,
+        "- (void)fooWithJavaLangIntegerArray:(IOSObjectArray *)value2");
+    assertTranslation(translation,
+        "- (void)fooWithNSStringArray:(IOSObjectArray *)value3");
+  }
+
+  public void testMultiDimArrayName() throws IOException {
+    String translation = translateSourceFile("public class A { " +
+        "void foo(int[] values) {}" +
+        "void foo(int[][] values) {}" +
+        "void foo(int[][][] values) {}}", "A", "A.h");
+    assertTranslation(translation, "- (void)fooWithIntArray:(IOSIntArray *)values");
+    assertTranslation(translation, "- (void)fooWithIntArray2:(IOSObjectArray *)values");
+    assertTranslation(translation, "- (void)fooWithIntArray3:(IOSObjectArray *)values");
   }
 }

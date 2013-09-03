@@ -21,6 +21,7 @@ import com.google.devtools.j2objc.types.GeneratedMethodBinding;
 import com.google.devtools.j2objc.types.GeneratedVariableBinding;
 import com.google.devtools.j2objc.types.NodeCopier;
 import com.google.devtools.j2objc.types.Types;
+import com.google.devtools.j2objc.util.ASTUtil;
 import com.google.devtools.j2objc.util.ErrorReportingASTVisitor;
 import com.google.devtools.j2objc.util.NameTable;
 import com.google.devtools.j2objc.util.UnicodeUtils;
@@ -28,9 +29,7 @@ import com.google.devtools.j2objc.util.UnicodeUtils;
 import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
-import org.eclipse.jdt.core.dom.ArrayCreation;
-import org.eclipse.jdt.core.dom.ArrayInitializer;
-import org.eclipse.jdt.core.dom.ArrayType;
+import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
 import org.eclipse.jdt.core.dom.Assignment;
 import org.eclipse.jdt.core.dom.Block;
 import org.eclipse.jdt.core.dom.BodyDeclaration;
@@ -39,16 +38,14 @@ import org.eclipse.jdt.core.dom.EnumDeclaration;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.ExpressionStatement;
 import org.eclipse.jdt.core.dom.FieldDeclaration;
+import org.eclipse.jdt.core.dom.IMethodBinding;
 import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.IVariableBinding;
 import org.eclipse.jdt.core.dom.Initializer;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.Modifier;
-import org.eclipse.jdt.core.dom.PrimitiveType;
-import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
-import org.eclipse.jdt.core.dom.Type;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
@@ -66,8 +63,6 @@ import java.util.List;
  */
 public class InitializationNormalizer extends ErrorReportingASTVisitor {
 
-  public static final String INIT_NAME = "init";
-
   @Override
   public void endVisit(TypeDeclaration node) {
     normalizeMembers(node);
@@ -80,6 +75,13 @@ public class InitializationNormalizer extends ErrorReportingASTVisitor {
     super.endVisit(node);
   }
 
+  @Override
+  public void endVisit(AnnotationTypeDeclaration node) {
+    normalizeMembers(node);
+    super.endVisit(node);
+  }
+
+
   void normalizeMembers(AbstractTypeDeclaration node) {
     List<Statement> initStatements = Lists.newArrayList();
     List<Statement> classInitStatements = Lists.newArrayList();
@@ -87,8 +89,7 @@ public class InitializationNormalizer extends ErrorReportingASTVisitor {
     ITypeBinding binding = Types.getTypeBinding(node);
 
     // Scan class, gathering initialization statements in declaration order.
-    @SuppressWarnings("unchecked")
-    List<BodyDeclaration> members = node.bodyDeclarations(); // safe by specification
+    List<BodyDeclaration> members = ASTUtil.getBodyDeclarations(node);
     Iterator<BodyDeclaration> iterator = members.iterator();
     while (iterator.hasNext()) {
       BodyDeclaration member = iterator.next();
@@ -150,9 +151,7 @@ public class InitializationNormalizer extends ErrorReportingASTVisitor {
       BodyDeclaration member, boolean isInterface, List<Statement> initStatements,
       List<Statement> classInitStatements) {
     FieldDeclaration field = (FieldDeclaration) member;
-    @SuppressWarnings("unchecked")
-    List<VariableDeclarationFragment> fragments = field.fragments(); // safe by specification
-    for (VariableDeclarationFragment frag : fragments) {
+    for (VariableDeclarationFragment frag : ASTUtil.getFragments(field)) {
       if (frag.getInitializer() != null) {
         Statement assignStmt = makeAssignmentStatement(frag);
         if (Modifier.isStatic(field.getModifiers()) || isInterface) {
@@ -187,32 +186,9 @@ public class InitializationNormalizer extends ErrorReportingASTVisitor {
 
   private ExpressionStatement makeAssignmentStatement(VariableDeclarationFragment fragment) {
     AST ast = fragment.getAST();
-    IVariableBinding varBinding = Types.getVariableBinding(fragment);
-    Assignment assignment = ast.newAssignment();
-    Types.addBinding(assignment, varBinding.getType());
-    Expression lhs = ast.newSimpleName(fragment.getName().getIdentifier());
-    Types.addBinding(lhs, varBinding);
-    assignment.setLeftHandSide(lhs);
-
-    Expression initializer = fragment.getInitializer();
-    if (initializer instanceof ArrayInitializer) {
-      // An array initializer cannot be directly assigned, since by itself
-      // it's just shorthand for an array creation node.  This therefore
-      // builds an array creation node with the existing initializer.
-      ArrayCreation arrayCreation = ast.newArrayCreation();
-      ITypeBinding arrayType = varBinding.getType();
-      Types.addBinding(arrayCreation, arrayType);
-      Type newType = Types.makeIOSType(arrayType);
-      assert newType != null;
-      ArrayType newArrayType = ast.newArrayType(newType);
-      Types.addBinding(newArrayType, arrayType);
-      arrayCreation.setType(newArrayType);
-      arrayCreation.setInitializer((ArrayInitializer) NodeCopier.copySubtree(ast, initializer));
-      assignment.setRightHandSide(arrayCreation);
-    } else {
-      assignment.setRightHandSide(NodeCopier.copySubtree(ast, initializer));
-    }
-    return ast.newExpressionStatement(assignment);
+    return ast.newExpressionStatement(ASTFactory.newAssignment(
+        ast, ASTFactory.newSimpleName(ast, Types.getVariableBinding(fragment)),
+        NodeCopier.copySubtree(ast, fragment.getInitializer())));
   }
 
   /**
@@ -225,16 +201,15 @@ public class InitializationNormalizer extends ErrorReportingASTVisitor {
    */
   void normalizeMethod(MethodDeclaration node, List<Statement> initStatements) {
     if (isDesignatedConstructor(node)) {
-      @SuppressWarnings("unchecked")
-      List<Statement> stmts = node.getBody().statements(); // safe by specification
+      List<Statement> stmts = ASTUtil.getStatements(node.getBody());
 
       // Insert initializer statements after the super invocation. If there
       // isn't a super invocation, add one (like all Java compilers do).
       if (stmts.isEmpty() || !(stmts.get(0) instanceof SuperConstructorInvocation)) {
         SuperConstructorInvocation superCall = node.getAST().newSuperConstructorInvocation();
         ITypeBinding superType = Types.getTypeBinding(node).getSuperclass();
-        GeneratedMethodBinding newBinding = new GeneratedMethodBinding(INIT_NAME, Modifier.PUBLIC,
-            node.getAST().resolveWellKnownType("void"), superType, true, false, true);
+        GeneratedMethodBinding newBinding = GeneratedMethodBinding.newConstructor(
+            superType, Modifier.PUBLIC);
         Types.addBinding(superCall, newBinding);
         stmts.add(0, superCall);
       }
@@ -282,8 +257,7 @@ public class InitializationNormalizer extends ErrorReportingASTVisitor {
     if (body == null) {
       return false;
     }
-    @SuppressWarnings("unchecked")
-    List<Statement> stmts = body.statements(); // safe by specification
+    List<Statement> stmts = ASTUtil.getStatements(body);
     if (stmts.isEmpty()) {
       return true;
     }
@@ -296,44 +270,31 @@ public class InitializationNormalizer extends ErrorReportingASTVisitor {
     SuperConstructorInvocation superCall = ast.newSuperConstructorInvocation();
     int constructorModifier =
         type.getModifiers() & (Modifier.PUBLIC | Modifier.PROTECTED | Modifier.PRIVATE);
-    GeneratedMethodBinding binding = new GeneratedMethodBinding(
-        INIT_NAME, constructorModifier, null, type.getSuperclass(), true, false, true);
+    GeneratedMethodBinding binding = GeneratedMethodBinding.newConstructor(
+        type.getSuperclass(), constructorModifier);
     Types.addBinding(superCall, binding);
     initStatements.add(0, superCall);
-    addMethod(INIT_NAME, constructorModifier, type, initStatements, members, ast, true);
+    members.add(createMethod(ast, GeneratedMethodBinding.newConstructor(type, constructorModifier),
+                             initStatements));
   }
 
   void addClassInitializer(ITypeBinding type, List<BodyDeclaration> members,
       List<Statement> classInitStatements, AST ast) {
     int modifiers = Modifier.PUBLIC | Modifier.STATIC;
-    addMethod(NameTable.CLINIT_NAME, modifiers, type, classInitStatements, members, ast, false);
+    members.add(createMethod(ast, GeneratedMethodBinding.newMethod(NameTable.CLINIT_NAME, modifiers,
+        ast.resolveWellKnownType("void"), type), classInitStatements));
   }
 
-  @SuppressWarnings("unchecked")
-  private void addMethod(String name, int modifiers, ITypeBinding type,
-      List<Statement> initStatements, List<BodyDeclaration> members, AST ast,
-      boolean isConstructor) {
+  private MethodDeclaration createMethod(
+      AST ast, IMethodBinding binding, List<Statement> statements) {
     Block body = ast.newBlock();
-    List<Statement> stmts = body.statements();  // safe by definition
-    for (Statement stmt : initStatements) {
+    List<Statement> stmts = ASTUtil.getStatements(body);
+    for (Statement stmt : statements) {
       Statement newStmt = NodeCopier.copySubtree(ast, stmt);
       stmts.add(newStmt);
     }
-    MethodDeclaration method = ast.newMethodDeclaration();
-    Type returnType = ast.newPrimitiveType(PrimitiveType.VOID);
-    ITypeBinding voidType = ast.resolveWellKnownType("void");
-    Types.addBinding(returnType, voidType);
-    ITypeBinding returnBinding = isConstructor ? null : voidType;
-    GeneratedMethodBinding binding = new GeneratedMethodBinding(
-        name, modifiers, returnBinding, type, isConstructor, false, true);
-    Types.addBinding(method, binding);
-    method.setReturnType2(returnType);
+    MethodDeclaration method = ASTFactory.newMethodDeclaration(ast, binding);
     method.setBody(body);
-    method.setConstructor(isConstructor);
-    method.modifiers().addAll(ast.newModifiers(modifiers));
-    SimpleName nameNode = NameTable.unsafeSimpleName(name, ast);
-    Types.addBinding(nameNode, binding);
-    method.setName(nameNode);
-    members.add(method);
+    return method;
   }
 }

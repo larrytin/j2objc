@@ -19,7 +19,6 @@
 //  Created by Tom Ball on 6/18/12.
 //
 
-#import "java/lang/reflect/AccessibleObject.h"
 #import "java/lang/AssertionError.h"
 #import "java/lang/Boolean.h"
 #import "java/lang/Byte.h"
@@ -30,8 +29,10 @@
 #import "java/lang/Long.h"
 #import "java/lang/Short.h"
 #import "java/lang/Void.h"
+#import "java/lang/reflect/AccessibleObject.h"
+#import "java/lang/reflect/Method.h"
 
-@implementation AccessibleObject
+@implementation JavaLangReflectAccessibleObject
 
 - (BOOL)isAccessible {
   // Everything in Objective-C is accessible at runtime.
@@ -42,14 +43,64 @@
   // do nothing
 }
 
++ (void)setAccessibleWithJavaLangReflectAccessibleObjectArray:(IOSObjectArray *)objects
+                                                     withBOOL:(BOOL)b {
+  // do nothing
+}
+
+- (id)getAnnotationWithIOSClass:(IOSClass *)annotationType {
+  nil_chk(annotationType);
+  IOSObjectArray *annotations = [self getAnnotations];
+  NSUInteger n = [annotations count];
+  for (NSUInteger i = 0; i < n; i++) {
+    id annotation = [annotations objectAtIndex:i];
+    if ([annotationType isInstance:annotation]) {
+      return annotation;
+    }
+  }
+  return nil;
+}
+
+- (IOSObjectArray *)getDeclaredAnnotations {
+  // can't call an abstract method
+  [self doesNotRecognizeSelector:_cmd];
+  return nil;
+}
+
+- (IOSObjectArray *)getAnnotations {
+  // Overridden by ExecutableMember to also return inherited members.
+  return [self getDeclaredAnnotations];
+}
+
+- (BOOL)isAnnotationPresentWithIOSClass:(IOSClass *)annotationType {
+  return [self getAnnotationWithIOSClass:annotationType] != nil;
+}
+
+- (IOSObjectArray *)getAnnotationsFromAccessor:(JavaLangReflectMethod *)method {
+  if (method) {
+    IOSObjectArray *noArgs = [IOSObjectArray arrayWithLength:0 type:[NSObject getClass]];
+    return (IOSObjectArray *) [method invokeWithId:nil withNSObjectArray:noArgs];
+  } else {
+    IOSClass *annotationType = [IOSClass classWithProtocol:@protocol(JavaLangAnnotationAnnotation)];
+    return [IOSObjectArray arrayWithLength:0 type:annotationType];
+  }
+}
+
 @end
 
 // TODO(user): is there a reasonable way to make these methods table-driven?
 
 // Return a Obj-C type encoding as a Java type or wrapper type.
-IOSClass *decodeTypeEncoding(char type) {
+IOSClass *decodeTypeEncoding(const char *type) {
   Class typeClass = nil;
-  switch (type) {
+  if (strlen(type) > 1 && type[0] == '@') {
+    // Format is '@"type-name"'.
+    char *typeNameAsC = strndup(type + 2, strlen(type) - 3);
+    NSString *typeName = [NSString stringWithUTF8String:typeNameAsC];
+    free(typeNameAsC);
+    return [IOSClass forName:typeName];
+  }
+  switch (type[0]) {
     case '@':
       typeClass = [NSObject class];
       break;
@@ -89,7 +140,7 @@ IOSClass *decodeTypeEncoding(char type) {
   }
   if (typeClass == nil) {
     NSString *errorMsg =
-    [NSString stringWithFormat:@"unknown Java type encoding: '%c'", type];
+    [NSString stringWithFormat:@"unknown Java type encoding: '%s'", type];
     id exception = [[JavaLangAssertionError alloc] initWithNSString:errorMsg];
 #if ! __has_feature(objc_arc)
     [exception autorelease];

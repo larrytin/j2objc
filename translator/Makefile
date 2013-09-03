@@ -50,13 +50,17 @@ JAVA_SOURCES = \
 	gen/HiddenFieldDetector.java \
 	gen/ObjectiveCHeaderGenerator.java \
 	gen/ObjectiveCImplementationGenerator.java \
+	gen/ObjectiveCSegmentedHeaderGenerator.java \
 	gen/ObjectiveCSourceFileGenerator.java \
 	gen/SourceFileGenerator.java \
 	gen/SourcePosition.java \
 	gen/StatementGenerator.java \
 	translate/ASTFactory.java \
 	translate/AnonymousClassConverter.java \
+	translate/ArrayRewriter.java \
 	translate/Autoboxer.java \
+	translate/ComplexExpressionExtractor.java \
+	translate/CopyAllFieldsWriter.java \
 	translate/DeadCodeEliminator.java \
 	translate/DestructorGenerator.java \
 	translate/GwtConverter.java \
@@ -64,9 +68,13 @@ JAVA_SOURCES = \
 	translate/InnerClassExtractor.java \
 	translate/JavaToIOSMethodTranslator.java \
 	translate/JavaToIOSTypeConverter.java \
+	translate/NilCheckResolver.java \
+	translate/OperatorRewriter.java \
 	translate/OuterReferenceFixer.java \
 	translate/OuterReferenceResolver.java \
 	translate/Rewriter.java \
+	translate/StaticVarRewriter.java \
+	translate/TypeSorter.java \
 	types/BindingMapBuilder.java \
 	types/BindingMapVerifier.java \
 	types/GeneratedMethodBinding.java \
@@ -75,8 +83,7 @@ JAVA_SOURCES = \
 	types/GeneratedVariableBinding.java \
 	types/HeaderImportCollector.java \
 	types/ImplementationImportCollector.java \
-	types/ImportCollector.java \
-	types/IOSArrayTypeBinding.java \
+	types/Import.java \
 	types/IOSMethod.java \
 	types/IOSMethodBinding.java \
 	types/IOSParameter.java \
@@ -89,6 +96,7 @@ JAVA_SOURCES = \
 	types/Types.java \
 	util/ASTNodeException.java \
 	util/ASTUtil.java \
+	util/BindingUtil.java \
 	util/DeadCodeMap.java \
 	util/ErrorReportingASTVisitor.java \
 	util/NameTable.java \
@@ -112,12 +120,13 @@ deps:
 	fi
 
 $(J2OBJC_JAR): $(MANIFEST) $(RESOURCE_FILES) $(JAVA_SOURCES_FULL) | $(BUILD_DIR)
-	javac -Xlint:unchecked -sourcepath $(SOURCEPATH) -classpath $(CLASSPATH) \
-	    -d $(CLASS_DIR) $(JAVA_SOURCES_FULL)
-	jar cfm $@ $(MANIFEST) -C $(CLASS_DIR) .
+	@echo Building j2objc jar
+	@javac -Xlint:unchecked -sourcepath $(SOURCEPATH) -classpath $(CLASSPATH) \
+	    -d $(CLASS_DIR) -encoding ISO-8859-1 -source 1.6 -target 1.6 -nowarn \
+	    $(JAVA_SOURCES_FULL)
+	@jar cfm $@ $(MANIFEST) -C $(CLASS_DIR) .
 
 $(MANIFEST): | $(BUILD_DIR)
-	@echo creating $@
 	@echo "Manifest-Version: 1.0" > $@
 	@echo "Main-Class:" $(MAIN_CLASS) >> $@
 	@echo "Class-Path:" $(JAR_DEPS) >> $@
@@ -127,10 +136,10 @@ $(CLASS_DIR)/%: $(RESOURCE_DIR)/%
 	@cp -f $< $@
 
 $(CLASS_DIR) $(BUILD_DIR) $(DIST_JAR_DIR):
-	mkdir -p $@
+	@mkdir -p $@
 
 $(J2OBJC_JAR_DIST): $(J2OBJC_JAR) | $(DIST_JAR_DIR)
-	install -m 0644 $< $@
+	@install -m 0644 $< $@
 
 dist: deps $(J2OBJC_JAR_DIST)
 	@:
@@ -144,5 +153,5 @@ test: deps $(J2OBJC_JAR) compile-tests
 compile-tests:
 	@rm -rf $(TEST_DIR)
 	@mkdir -p $(TEST_DIR)
-	@javac -sourcepath src/test/java -classpath $(TEST_CLASSPATH) -d $(TEST_DIR) \
-		`find src/test/java -name '*.java'`
+	@javac -Xlint:unchecked -sourcepath src/test/java -classpath $(TEST_CLASSPATH) \
+	    -d $(TEST_DIR) `find src/test/java -name '*.java'`

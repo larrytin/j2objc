@@ -20,6 +20,7 @@
 //
 
 #import "IOSFloatArray.h"
+#import "IOSArrayClass.h"
 #import "IOSPrimitiveClass.h"
 #import "java/lang/Float.h"
 
@@ -50,48 +51,53 @@
 }
 
 - (float)floatAtIndex:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return buffer_[index];
 }
 
+- (float *)floatRefAtIndex:(NSUInteger)index {
+  IOSArray_checkIndex(size_, index);
+  return &buffer_[index];
+}
+
 - (float)replaceFloatAtIndex:(NSUInteger)index withFloat:(float)value {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   buffer_[index] = value;
   return value;
 }
 
 - (void)getFloats:(float *)buffer length:(NSUInteger)length {
-  IOSArray_checkIndex(self, length - 1);
+  IOSArray_checkIndex(size_, length - 1);
   memcpy(buffer, buffer_, length * sizeof(float));
 }
 
 - (void) arraycopy:(NSRange)sourceRange
        destination:(IOSArray *)destination
             offset:(NSInteger)offset {
-  IOSArray_checkRange(self, sourceRange);
-  IOSArray_checkRange(destination, NSMakeRange(offset, sourceRange.length));
+  IOSArray_checkRange(size_, sourceRange);
+  IOSArray_checkRange(destination->size_, NSMakeRange(offset, sourceRange.length));
   memmove(((IOSFloatArray *) destination)->buffer_ + offset,
           self->buffer_ + sourceRange.location,
           sourceRange.length * sizeof(float));
 }
 
 - (float)incr:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return ++buffer_[index];
 }
 
 - (float)decr:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return --buffer_[index];
 }
 
 - (float)postIncr:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return buffer_[index]++;
 }
 
 - (float)postDecr:(NSUInteger)index {
-  IOSArray_checkIndex(self, index);
+  IOSArray_checkIndex(size_, index);
   return buffer_[index]--;
 }
 
@@ -100,11 +106,11 @@
 }
 
 - (IOSClass *)elementType {
-  id type = [[IOSPrimitiveClass alloc] initWithName:@"float" type:@"F"];
-#if ! __has_feature(objc_arc)
-  [type autorelease];
-#endif
-  return type;
+  return [IOSClass floatClass];
+}
+
++ (IOSClass *)iosClass {
+  return [IOSClass arrayClassWithComponentType:[IOSClass floatClass]];
 }
 
 - (id)copyWithZone:(NSZone *)zone {

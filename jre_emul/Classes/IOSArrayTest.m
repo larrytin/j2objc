@@ -30,7 +30,9 @@
 #import "IOSIntArray.h"
 #import "IOSLongArray.h"
 #import "IOSShortArray.h"
+#import "JreEmulation.h"
 #import "java/lang/IndexOutOfBoundsException.h"
+#import "java/util/Calendar.h"
 #import "java/util/Date.h"
 
 // Unit tests for IOSArray.
@@ -46,74 +48,41 @@
 @implementation IOSArrayTest
 
 - (void)testCheckIndex {
-  IOSArray *array = [[IOSArray alloc] initWithLength:2];
-  STAssertEquals([array count], (NSUInteger) 2, 
-                 @"count should have returned 2, but was %d",
-                 [array count]);
-  STAssertNoThrowSpecific([array checkIndex:0], 
+  STAssertNoThrowSpecific(IOSArray_checkIndex(2, 0),
                           JavaLangIndexOutOfBoundsException,
                           @"Exception was thrown for a valid index");
-  STAssertNoThrowSpecific([array checkIndex:1], 
+  STAssertNoThrowSpecific(IOSArray_checkIndex(2, 1),
                           JavaLangIndexOutOfBoundsException,
                           @"Exception was thrown for a valid index");
-  STAssertThrowsSpecific([array checkIndex:-1], 
+  STAssertThrowsSpecific(IOSArray_checkIndex(2, -1),
                          JavaLangIndexOutOfBoundsException,
                          @"Exception was not thrown for an invalid index");
-  STAssertThrowsSpecific([array checkIndex:2], 
+  STAssertThrowsSpecific(IOSArray_checkIndex(2, 2),
                          JavaLangIndexOutOfBoundsException,
                          @"Exception was not thrown for an invalid index");
 }
 
 - (void)testCheckRange {
-  IOSArray *array = [[IOSArray alloc] initWithLength:2];
-  STAssertEquals([array count], (NSUInteger) 2, 
-                 @"count should have returned 2, but was %d",
-                 [array count]);
-  STAssertNoThrowSpecific([array checkRange:NSMakeRange(0, 1)], 
+  STAssertNoThrowSpecific(IOSArray_checkRange(2, NSMakeRange(0, 1)),
                           JavaLangIndexOutOfBoundsException,
                           @"Exception was thrown for a valid index");
-  STAssertNoThrowSpecific([array checkRange:NSMakeRange(0, 2)], 
+  STAssertNoThrowSpecific(IOSArray_checkRange(2, NSMakeRange(0, 2)),
                           JavaLangIndexOutOfBoundsException,
                           @"Exception was thrown for a valid index");
-  STAssertNoThrowSpecific([array checkRange:NSMakeRange(1, 1)], 
+  STAssertNoThrowSpecific(IOSArray_checkRange(2, NSMakeRange(1, 1)),
                           JavaLangIndexOutOfBoundsException,
                           @"Exception was thrown for a valid index");
-  STAssertThrowsSpecific([array checkRange:NSMakeRange(-1, 2)], 
+  STAssertThrowsSpecific(IOSArray_checkRange(2, NSMakeRange(-1, 2)),
                           JavaLangIndexOutOfBoundsException,
                           @"Exception was not thrown for an invalid index");
-  STAssertThrowsSpecific([array checkRange:NSMakeRange(0, 3)], 
+  STAssertThrowsSpecific(IOSArray_checkRange(2, NSMakeRange(0, 3)),
                          JavaLangIndexOutOfBoundsException,
                          @"Exception was not thrown for an invalid index");
-  STAssertThrowsSpecific([array checkRange:NSMakeRange(1, 2)], 
+  STAssertThrowsSpecific(IOSArray_checkRange(2, NSMakeRange(1, 2)),
                          JavaLangIndexOutOfBoundsException,
                          @"Exception was not thrown for an invalid index");
-  STAssertNoThrow([array checkRange:NSMakeRange(2, 0)], 
+  STAssertNoThrow(IOSArray_checkRange(2, NSMakeRange(2, 0)),
                          @"Exception was thrown for a zero length range");
-}
-
-- (void)testCheckRangeWithOffset {
-  IOSArray *array = [[IOSArray alloc] initWithLength:4];
-  STAssertEquals([array count], (NSUInteger) 4, 
-                 @"count should have returned 4, but was %d",
-                 [array count]);
-  STAssertNoThrowSpecific([array checkRange:NSMakeRange(0, 1) withOffset:2], 
-                          JavaLangIndexOutOfBoundsException,
-                          @"Exception was thrown for a valid index");
-  STAssertNoThrowSpecific([array checkRange:NSMakeRange(0, 2) withOffset:1], 
-                          JavaLangIndexOutOfBoundsException,
-                          @"Exception was thrown for a valid index");
-  STAssertThrowsSpecific([array checkRange:NSMakeRange(-1, 2) withOffset:1], 
-                         JavaLangIndexOutOfBoundsException,
-                         @"Exception was not thrown for an invalid index");
-  STAssertThrowsSpecific([array checkRange:NSMakeRange(0, 4) withOffset:1], 
-                         JavaLangIndexOutOfBoundsException,
-                         @"Exception was not thrown for an invalid index");
-  STAssertThrowsSpecific([array checkRange:NSMakeRange(1, 2) withOffset:2], 
-                         JavaLangIndexOutOfBoundsException,
-                         @"Exception was not thrown for an invalid index");
-  STAssertThrowsSpecific([array checkRange:NSMakeRange(2, 1) withOffset:-1], 
-                         JavaLangIndexOutOfBoundsException,
-                         @"Exception was not thrown for an invalid index");
 }
 
 - (void)testBooleanArrayCopy {
@@ -238,14 +207,14 @@
 // need a specified element type.
 - (void)testObjectMultiDimensionalCreate {
   IOSClass *type = [IOSClass classWithClass:[JavaUtilDate class]];
-  
+
   // Verify single dimension array is correct type.
   id array = [IOSObjectArray arrayWithDimensions:1
                                          lengths:(NSUInteger[]){2}
                                             type:type];
   STAssertEqualObjects([array elementType], type,
                        @"wrong element type: %@", [array elementType]);
-  
+
   // Verify multiple dimension array is an array of arrays (of arrays).
   array = [IOSObjectArray arrayWithDimensions:3
                                       lengths:(NSUInteger[]){2, 4, 6}
@@ -270,6 +239,31 @@
                            @"wrong array type: %@", [subsubarray elementType]);
     }
   }
+}
+
+// Verify that array type classes can be compared correctly.
+- (void)testIsEqual {
+  // Verify primitive array types are equal ...
+  IOSBooleanArray *boolArray1 = [IOSBooleanArray arrayWithLength:0];
+  IOSBooleanArray *boolArray2 = [IOSBooleanArray arrayWithLength:10];
+  STAssertTrue([[boolArray1 getClass] isEqual:[boolArray2 getClass]],
+               @"boolean array types not equal");
+  IOSIntArray *intArray1 = [IOSIntArray arrayWithLength:0];
+  IOSIntArray *intArray2 = [IOSIntArray arrayWithLength:10];
+  STAssertTrue([[intArray1 getClass] isEqual:[intArray2 getClass]], @"int array types not equal");
+
+  // ... but not to each other.
+  STAssertFalse([[boolArray1 getClass] isEqual:[intArray2 getClass]],
+                @"different primitive array types equal");
+
+  // Verify object array types are equal only if their element type is equal.
+  IOSObjectArray *dateArray1 = [IOSObjectArray arrayWithLength:0 type:[JavaUtilDate getClass]];
+  IOSObjectArray *dateArray2 = [IOSObjectArray arrayWithLength:10 type:[JavaUtilDate getClass]];
+  IOSObjectArray *calArray = [IOSObjectArray arrayWithLength:0 type:[JavaUtilCalendar getClass]];
+  STAssertTrue([[dateArray1 getClass] isEqual:[dateArray2 getClass]],
+               @"Date array types not equal");
+  STAssertFalse([[dateArray1 getClass] isEqual:[calArray getClass]],
+                @"different object array types equal");
 }
 
 @end

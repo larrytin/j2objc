@@ -20,6 +20,21 @@
 //
 
 #import "JreEmulation.h"
+#import "IOSClass.h"
+
+#ifdef J2OBJC_COUNT_NIL_CHK
+int j2objc_nil_chk_count = 0;
+#endif
+
+void JrePrintNilChkCount() {
+#ifdef J2OBJC_COUNT_NIL_CHK
+  printf("nil_chk count: %d\n", j2objc_nil_chk_count);
+#endif
+}
+
+void JrePrintNilChkCountAtExit() {
+  atexit(JrePrintNilChkCount);
+}
 
 // Converts main() arguments into an IOSObjectArray of NSStrings.  The first
 // argument, the program name, is skipped so the returned array matches what
@@ -28,7 +43,7 @@ FOUNDATION_EXPORT
     IOSObjectArray *JreEmulationMainArguments(int argc, const char *argv[]) {
   IOSClass *stringType = [IOSClass classWithClass:[NSString class]];
   if (argc <= 1) {
-    return [IOSObjectArray arrayWithType:stringType count:0];
+    return [IOSObjectArray arrayWithLength:0 type:stringType];
   }
   IOSObjectArray *args = [[IOSObjectArray alloc] initWithLength:argc - 1
                                                            type:stringType];

@@ -1,3 +1,11 @@
-This package provides an Objective-C library of JUnit's framework classes,
-and a simple unit test runner.  This library is used with JUnit test source
-files translated with J2ObjC.
+This package creates an Objective-C library of JUnit's core classes. To
+use, create an executable with one or more test classes, linking with the
+"-l junit" flag. Tests are executed by running the binary with one or
+more test and/or test suite class names:
+
+$ j2objc -classpath [j2objc-dist]/lib/junit.jar FooTest.java BarTest.java
+$ j2objc -o tests FooTest.m BarTest.m -l junit
+$ ./tests FooTest BarTest
+
+This project uses unmodified sources from junit.org, along with a native
+runner class to catch and report segfaults.

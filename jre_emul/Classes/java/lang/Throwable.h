@@ -19,6 +19,9 @@
 //  Created by Tom Ball on 6/21/11, using j2objc.
 //
 
+#ifndef _JavaLangThrowable_H_
+#define _JavaLangThrowable_H_
+
 #import <Foundation/Foundation.h>
 #import "java/io/Serializable.h"
 
@@ -31,14 +34,17 @@
   JavaLangThrowable *cause;
   NSString *detailMessage;
   IOSObjectArray *stackTrace;
+  IOSObjectArray *suppressedExceptions;
 }
 - (id)init;
-- (id)initJavaLangThrowableWithNSString:(NSString *)message
-                  withJavaLangThrowable:(JavaLangThrowable *)causeArg;
 - (id)initWithNSString:(NSString *)message;
 - (id)initWithNSString:(NSString *)message
  withJavaLangThrowable:(JavaLangThrowable *)cause;
 - (id)initWithJavaLangThrowable:(JavaLangThrowable *)cause;
+- (id)initWithNSString:(NSString *)message
+ withJavaLangThrowable:(JavaLangThrowable *)cause
+              withBOOL:(BOOL)enableSuppression
+              withBOOL:(BOOL)writeableStackTrace;
 - (JavaLangThrowable *)fillInStackTrace;
 - (JavaLangThrowable *)getCause;
 - (NSString *)getLocalizedMessage;
@@ -56,4 +62,9 @@
 // unsetting its method family.
 - (JavaLangThrowable *)initCauseWithJavaLangThrowable:
     (JavaLangThrowable *)cause __attribute__((objc_method_family(none)));
+
+- (void)addSuppressedWithJavaLangThrowable:(JavaLangThrowable *)exception;
+- (IOSObjectArray *)getSuppressed;
 @end
+
+#endif // _JavaLangThrowable_H_

@@ -20,28 +20,15 @@
 //
 
 #import "IOSArrayClass.h"
+#import "IOSObjectArray.h"
 #import "IOSPrimitiveClass.h"
+#import "java/lang/InstantiationException.h"
 
 @implementation IOSArrayClass
 
-@synthesize componentType = componentType_;
-
-+ (id)classWithComponentType:(IOSClass *)type {
-  id clazz = [[IOSArrayClass alloc] initWithComponentType:type];
-#if __has_feature(objc_arc)
-  return clazz;
-#else
-  return [clazz autorelease];
-#endif
-}
-
 - (id)initWithComponentType:(IOSClass *)type {
-  if ((self = [super initWithClass:[self class]])) {
-#if __has_feature(objc_arc)
-    componentType_ = type;
-#else
-    componentType_ = [type retain];
-#endif
+  if ((self = [super init])) {
+    componentType_ = RETAIN(type);
   }
   return self;
 }
@@ -50,16 +37,41 @@
   return componentType_;
 }
 
-- (NSString *)binaryName {
-  return [@"[" stringByAppendingString:[[self getComponentType] binaryName]];
+- (BOOL)isArray {
+  return YES;
+}
+
+- (IOSClass *)getSuperclass {
+  return [IOSClass objectClass];
+}
+
+- (BOOL)isInstance:(id)object {
+  IOSClass *objClass = [object getClass];
+  return [objClass isArray] && [componentType_ isAssignableFrom:[objClass getComponentType]];
+}
+
+- (BOOL)isAssignableFrom:(IOSClass *)cls {
+  return [cls isArray] && [componentType_ isAssignableFrom:[cls getComponentType]];
 }
 
 - (NSString *)getName {
-  return [self binaryName];
+  return [self getSimpleName];
 }
 
 - (NSString *)getSimpleName {
-  return [self binaryName];
+  return [[[self getComponentType] getName] stringByAppendingString:@"Array"];
+}
+
+- (id)newInstance {
+  if (!componentType_) {
+    @throw AUTORELEASE([[JavaLangInstantiationException alloc] init]);
+  }
+  return [IOSObjectArray arrayWithLength:0 type:componentType_];
+}
+
+- (BOOL)isEqual:(id)anObject {
+  return [anObject isKindOfClass:[IOSArrayClass class]] &&
+    [componentType_ isEqual:[anObject getComponentType]];
 }
 
 #if ! __has_feature(objc_arc)

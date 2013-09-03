@@ -17,12 +17,14 @@
 
 package java.lang;
 
-/*-{
+/*-[
+#import "java/lang/NumberFormatException.h"
+
 // From apache-harmony/classlib/modules/luni/src/main/native/luni/shared/floatbits.c
 #define SINGLE_EXPONENT_MASK    0x7F800000
 #define SINGLE_MANTISSA_MASK    0x007FFFFF
 #define SINGLE_NAN_BITS         (SINGLE_EXPONENT_MASK | 0x00400000)
-}-*/
+]-*/
 
 /**
  * The wrapper for the primitive type {@code float}.
@@ -31,6 +33,15 @@ package java.lang;
  * @since 1.0
  */
 public final class Float extends Number implements Comparable<Float> {
+    static final int EXPONENT_BIAS = 127;
+
+    static final int EXPONENT_BITS = 9;
+    static final int MANTISSA_BITS = 23;
+    static final int NON_MANTISSA_BITS = 9;
+
+    static final int SIGN_MASK     = 0x80000000;
+    static final int EXPONENT_MASK = 0x7f800000;
+    static final int MANTISSA_MASK = 0x007fffff;
 
     /**
      * The value which the receiver represents.
@@ -61,6 +72,22 @@ public final class Float extends Number implements Comparable<Float> {
      * Constant for the Negative Infinity value of the {@code float} type.
      */
     public static final float NEGATIVE_INFINITY = -1.0f / 0.0f;
+
+    /**
+     * Maximum base-2 exponent that a finite value of the {@code float} type may have.
+     * Equal to {@code Math.getExponent(Float.MAX_VALUE)}.
+     *
+     * @since 1.6
+     */
+    public static final int MAX_EXPONENT = 127;
+
+    /**
+     * Minimum base-2 exponent that a normal value of the {@code float} type may have.
+     * Equal to {@code Math.getExponent(Float.MIN_NORMAL)}.
+     *
+     * @since 1.6
+     */
+    public static final int MIN_EXPONENT = -126;
 
     /**
      * The {@link Class} object that represents the primitive type {@code
@@ -163,11 +190,13 @@ public final class Float extends Number implements Comparable<Float> {
      *         {@code Float}; {@code false} otherwise.
      */
     @Override
-    public native boolean equals(Object object) /*-{
-        if (!object) return NO;
+    public native boolean equals(Object object) /*-[
+        if (!object || ![object isKindOfClass:[JavaLangFloat class]]) {
+          return NO;
+        }
         NSComparisonResult result = [self compare:object];
         return result == NSOrderedSame;
-    }-*/;
+    ]-*/;
 
     /**
      * Converts the specified float value to a binary representation conforming
@@ -182,7 +211,7 @@ public final class Float extends Number implements Comparable<Float> {
      * @see #floatToRawIntBits(float)
      * @see #intBitsToFloat(int)
      */
-    public static native int floatToIntBits(float value) /*-{
+    public static native int floatToIntBits(float value) /*-[
       // Modified from Harmony JNI implementation.
       int intValue = *(int *) &value;
       if ((intValue & SINGLE_EXPONENT_MASK) == SINGLE_EXPONENT_MASK) {
@@ -191,7 +220,7 @@ public final class Float extends Number implements Comparable<Float> {
         }
       }
       return intValue;
-    }-*/;
+    ]-*/;
 
     /**
      * Converts the specified float value to a binary representation conforming
@@ -205,9 +234,9 @@ public final class Float extends Number implements Comparable<Float> {
      * @see #floatToIntBits(float)
      * @see #intBitsToFloat(int)
      */
-    public static native int floatToRawIntBits(float value) /*-{
+    public static native int floatToRawIntBits(float value) /*-[
         return *(int *) &value;
-    }-*/;
+    ]-*/;
 
     /**
      * Gets the primitive value of this float.
@@ -235,9 +264,9 @@ public final class Float extends Number implements Comparable<Float> {
      * @see #floatToIntBits(float)
      * @see #floatToRawIntBits(float)
      */
-    public static native float intBitsToFloat(int bits) /*-{
+    public static native float intBitsToFloat(int bits) /*-[
         return *(float *) &bits;
-    }-*/;
+    ]-*/;
 
     @Override
     public int intValue() {
@@ -262,9 +291,9 @@ public final class Float extends Number implements Comparable<Float> {
      * @return {@code true} if the value of {@code f} is positive or negative
      *         infinity; {@code false} otherwise.
      */
-    public static native boolean isInfinite(float f) /*-{
+    public static native boolean isInfinite(float f) /*-[
         return isinf(f);
-    }-*/;
+    ]-*/;
 
     /**
      * Indicates whether this object is a <em>Not-a-Number (NaN)</em> value.
@@ -285,9 +314,9 @@ public final class Float extends Number implements Comparable<Float> {
      * @return {@code true} if {@code f} is <em>Not-a-Number</em>;
      *         {@code false} if it is a (potentially infinite) float number.
      */
-    public native static boolean isNaN(float f) /*-{
+    public native static boolean isNaN(float f) /*-[
         return isnan(f);
-    }-*/;
+    ]-*/;
 
     @Override
     public long longValue() {
@@ -306,9 +335,15 @@ public final class Float extends Number implements Comparable<Float> {
      * @see #valueOf(String)
      * @since 1.2
      */
-    public native static float parseFloat(String string) throws NumberFormatException /*-{
-        return [string floatValue];
-    }-*/;
+    public native static float parseFloat(String string) throws NumberFormatException /*-[
+      NSNumberFormatter *f = AUTORELEASE([[NSNumberFormatter alloc] init]);
+      [f setNumberStyle:NSNumberFormatterDecimalStyle];
+      NSNumber *result = [f numberFromString:string];
+      if (!result) {
+        @throw AUTORELEASE([[JavaLangNumberFormatException alloc] initWithNSString:string]);
+      }
+      return [result floatValue];
+    ]-*/;
 
     @Override
     public short shortValue() {
@@ -328,9 +363,9 @@ public final class Float extends Number implements Comparable<Float> {
      *             the float to convert to a string.
      * @return a printable representation of {@code f}.
      */
-    public native static String toString(float f) /*-{
+    public native static String toString(float f) /*-[
         return [NSString stringWithFormat:@"%01.1f", f];
-    }-*/;
+    ]-*/;
 
     /**
      * Parses the specified string as a float value.
@@ -416,7 +451,7 @@ public final class Float extends Number implements Comparable<Float> {
      * @return the hexadecimal string representation of {@code f}.
      * @since 1.5
      */
-    public static native String toHexString(float f) /*-{
+    public static native String toHexString(float f) /*-[
         return [NSString stringWithFormat:@"%A", (double) f];
-    }-*/;
+    ]-*/;
 }

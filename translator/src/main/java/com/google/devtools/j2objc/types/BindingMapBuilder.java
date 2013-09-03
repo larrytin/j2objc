@@ -21,6 +21,7 @@ import com.google.devtools.j2objc.util.ErrorReportingASTVisitor;
 
 import org.eclipse.jdt.core.dom.ASTNode;
 import org.eclipse.jdt.core.dom.AnnotationTypeDeclaration;
+import org.eclipse.jdt.core.dom.AnnotationTypeMemberDeclaration;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.ArrayAccess;
 import org.eclipse.jdt.core.dom.ArrayCreation;
@@ -44,9 +45,11 @@ import org.eclipse.jdt.core.dom.ITypeBinding;
 import org.eclipse.jdt.core.dom.InfixExpression;
 import org.eclipse.jdt.core.dom.InstanceofExpression;
 import org.eclipse.jdt.core.dom.LabeledStatement;
+import org.eclipse.jdt.core.dom.MarkerAnnotation;
 import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.MethodRef;
+import org.eclipse.jdt.core.dom.NormalAnnotation;
 import org.eclipse.jdt.core.dom.NullLiteral;
 import org.eclipse.jdt.core.dom.NumberLiteral;
 import org.eclipse.jdt.core.dom.ParameterizedType;
@@ -58,6 +61,7 @@ import org.eclipse.jdt.core.dom.QualifiedName;
 import org.eclipse.jdt.core.dom.QualifiedType;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SimpleType;
+import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
 import org.eclipse.jdt.core.dom.SingleVariableDeclaration;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.SuperConstructorInvocation;
@@ -67,6 +71,7 @@ import org.eclipse.jdt.core.dom.ThisExpression;
 import org.eclipse.jdt.core.dom.TypeDeclaration;
 import org.eclipse.jdt.core.dom.TypeLiteral;
 import org.eclipse.jdt.core.dom.TypeParameter;
+import org.eclipse.jdt.core.dom.UnionType;
 import org.eclipse.jdt.core.dom.VariableDeclarationExpression;
 import org.eclipse.jdt.core.dom.VariableDeclarationFragment;
 
@@ -100,6 +105,12 @@ class BindingMapBuilder extends ErrorReportingASTVisitor {
 
   // There is a lot of seemingly duplicate code here, but each
   // resolve*Binding() method is specific to the node type.
+
+  @Override
+  public boolean visit(AnnotationTypeMemberDeclaration node) {
+    put(node, node.resolveBinding());
+    return true;
+  }
 
   @Override
   public boolean visit(AnnotationTypeDeclaration node) {
@@ -238,6 +249,12 @@ class BindingMapBuilder extends ErrorReportingASTVisitor {
   }
 
   @Override
+  public boolean visit(MarkerAnnotation node) {
+    put(node, node.resolveAnnotationBinding());
+    return true;
+  }
+
+  @Override
   public boolean visit(MethodDeclaration node) {
     put(node, node.resolveBinding());
     return true;
@@ -252,6 +269,12 @@ class BindingMapBuilder extends ErrorReportingASTVisitor {
   @Override
   public boolean visit(MethodRef node) {
     put(node, node.resolveBinding());
+    return true;
+  }
+
+  @Override
+  public boolean visit(NormalAnnotation node) {
+    put(node, node.resolveAnnotationBinding());
     return true;
   }
 
@@ -322,6 +345,12 @@ class BindingMapBuilder extends ErrorReportingASTVisitor {
   }
 
   @Override
+  public boolean visit(SingleMemberAnnotation node) {
+    put(node, node.resolveAnnotationBinding());
+    return true;
+  }
+
+  @Override
   public boolean visit(SingleVariableDeclaration node) {
     put(node, node.resolveBinding());
     return true;
@@ -375,6 +404,11 @@ class BindingMapBuilder extends ErrorReportingASTVisitor {
     return true;
   }
 
+  public boolean visit(UnionType node) {
+    put(node, node.resolveBinding());
+    return true;
+  }
+
   @Override
   public boolean visit(VariableDeclarationExpression node) {
     put(node, node.resolveTypeBinding());
@@ -388,6 +422,6 @@ class BindingMapBuilder extends ErrorReportingASTVisitor {
   }
 
   private ITypeBinding createLabelBinding(SimpleName label) {
-    return new IOSTypeBinding(label.getIdentifier(), false);
+    return IOSTypeBinding.newUnmappedClass(label.getIdentifier());
   }
 }

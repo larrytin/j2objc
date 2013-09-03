@@ -19,6 +19,9 @@
 //  Created by Tom Ball on 8/15/11.
 //
 
+#ifndef _NSObject_JavaObject_H_
+#define _NSObject_JavaObject_H_
+
 #import <Foundation/Foundation.h>
 #import "JavaObject.h"
 
@@ -26,9 +29,6 @@
 
 // A category that adds Java Object-compatible methods to NSObject.
 @interface NSObject (JavaObject) <JavaObject>
-
-// Object.clone()
-- (id)clone;
 
 // JavaObject doesn't implement Comparable, but the Comparable contract wants
 // a ClassCastException to be thrown if "if the specified object's type
@@ -41,7 +41,7 @@
 
 // Should be implemented by any class that needs to support Java's clone
 // behavior for itself or its subclasses.
-- (void)copyAllPropertiesTo:(id)copy;
+- (void)copyAllFieldsTo:(id)other;
 
 - (NSArray *)memDebugStrongReferences;
 
@@ -49,15 +49,4 @@
 
 @end
 
-// Marked as unused to avoid a clang warning when this file is included
-// but NIL_CHK isn't used.
-__attribute__ ((unused)) static inline id nil_chk(id p) {
-#if !defined(J2OBJC_DISABLE_NIL_CHECKS)
-  return p ? p : [NSObject throwNullPointerException];
-#else
-  return p;
-#endif
-}
-
-#define NIL_CHK(p) nil_chk(p)
-
+#endif // _NSObject_JavaObject_H_

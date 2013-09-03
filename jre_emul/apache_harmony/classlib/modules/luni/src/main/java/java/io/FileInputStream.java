@@ -17,6 +17,11 @@
 
 package java.io;
 
+/*-[
+#import <fcntl.h>
+#import <sys/ioctl.h>
+]-*/
+
 /**
  * A specialized {@link InputStream} that reads from a file in the file system.
  * All read requests made by calling methods in this class are directly
@@ -63,9 +68,9 @@ public class FileInputStream extends InputStream implements Closeable {
         fd.descriptor = open(file.getAbsolutePath());
     }
     
-    private native long open(String path) /*-{
+    private native long open(String path) /*-[
       return (long long) open([path UTF8String], O_RDONLY);
-    }-*/;
+    ]-*/;
 
     /**
      * Constructs a new {@code FileInputStream} on the {@link FileDescriptor}
@@ -85,9 +90,6 @@ public class FileInputStream extends InputStream implements Closeable {
         if (fd == null) {
             throw new NullPointerException();
         }
-	if (fd == FileDescriptor.in) {
-	    throw new AssertionError("stdin not implemented");
-	}
         this.fd = fd;
     }
 
@@ -121,16 +123,37 @@ public class FileInputStream extends InputStream implements Closeable {
     public int available() throws IOException {
         openCheck();
         synchronized (repositioningLock) {
+            // stdin requires special handling
+            if (fd == FileDescriptor.in) {
+                return nativeTtyAvailable();
+            }
             return nativeAvailable(fd.descriptor);
         }
     }
     
-    private native int nativeAvailable(long descriptor) /*-{
+    private native int nativeAvailable(long descriptor) /*-[
       long long currentPosition = lseek(descriptor, 0L, SEEK_CUR);
       long long endPosition = lseek(descriptor, 0L, SEEK_END);
       lseek(descriptor, currentPosition, SEEK_SET);
       return (int) (endPosition - currentPosition);
-    }-*/;
+    ]-*/;
+
+    // Code based on Harmony's hytty.c:hytty_available().
+    private native int nativeTtyAvailable() /*-[
+      long long currentPosition = lseek(STDIN_FILENO, 0L, SEEK_CUR);
+      if (currentPosition != -1) {
+        long long endPosition = lseek(STDIN_FILENO, 0L, SEEK_END);
+        lseek(STDIN_FILENO, currentPosition, SEEK_SET);
+        if (endPosition >= currentPosition) {
+          return endPosition - currentPosition;
+        }
+      }
+      NSInteger available;
+      if (ioctl(STDIN_FILENO, FIONREAD, &available) != -1) {
+        return *(int *) &available;
+      }
+      return 0;
+    ]-*/;
 
     /**
      * Closes this stream.
@@ -154,9 +177,9 @@ public class FileInputStream extends InputStream implements Closeable {
         }
     }
     
-    private native void nativeClose() /*-{
+    private native void nativeClose() /*-[
       close(fd_->descriptor_);
-    }-*/;
+    ]-*/;
 
     /**
      * Ensures that all resources for this stream are released when it is about
@@ -252,7 +275,7 @@ public class FileInputStream extends InputStream implements Closeable {
         }
     }
 
-    private native int nativeRead(byte[] buffer, int offset, int count) /*-{
+    private native int nativeRead(byte[] buffer, int offset, int count) /*-[
       char *buf = malloc(count);
       @try {
         int n = read(fd_->descriptor_, buf, count);
@@ -272,7 +295,7 @@ public class FileInputStream extends InputStream implements Closeable {
       @finally {
         free(buf);
       }
-    }-*/;
+    ]-*/;
 
     /**
      * Skips {@code count} number of bytes in this stream. Subsequent
@@ -302,11 +325,11 @@ public class FileInputStream extends InputStream implements Closeable {
         }
     }
     
-    private native long seek(long count) /*-{
+    private native long seek(long count) /*-[
       long currentPosition = lseek(fd_->descriptor_, 0L, SEEK_CUR);
       long newPosition = lseek(fd_->descriptor_, count, SEEK_CUR);
       return newPosition - currentPosition;
-    }-*/;
+    ]-*/;
 
     private synchronized void openCheck() throws IOException {
         if (fd.descriptor < 0) {

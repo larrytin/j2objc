@@ -40,7 +40,7 @@ JAVA_SOURCES = \
 RESOURCES = \
     com/google/devtools/cyclefinder/CycleFinder.properties
 
-JAR_DEPS = $(ECLIPSE_JARS) $(GUAVA_JAR)
+JAR_DEPS = $(ECLIPSE_JARS) $(GUAVA_JAR) j2objc.jar
 JAR_DEPS_DIST = $(JAR_DEPS:%=$(DIST_JAR_DIR)/%)
 JAR_DEPS_PATH = $(subst $(eval) ,:,$(strip $(JAR_DEPS_DIST)))
 JUNIT_JAR_DIST = $(DIST_JAR_DIR)/$(JUNIT_JAR)
@@ -65,6 +65,7 @@ deps:
 	@if [ "$(CONFIGURATION_BUILD_DIR)x$(MAKELEVEL)" == "x0" ]; then \
 	  cd ../annotations && make dist; \
 	  cd ../java_deps && make dist; \
+	  cd ../translator && make dist; \
 	fi
 
 clean:
@@ -72,7 +73,7 @@ clean:
 
 $(JAR): $(MANIFEST) $(RESOURCE_FILES) $(JAVA_SOURCES_FULL) | $(CLASS_DIR)
 	javac -Xlint:unchecked -sourcepath $(JAVA_SOURCE_DIR) -classpath $(JAR_DEPS_PATH) \
-	    -d $(CLASS_DIR) $(JAVA_SOURCES:%=$(JAVA_SOURCE_DIR)/%)
+	    -d $(CLASS_DIR) -source 1.6 -target 1.6 -nowarn $(JAVA_SOURCES:%=$(JAVA_SOURCE_DIR)/%)
 	jar cfm $@ $(MANIFEST) -C $(CLASS_DIR) .
 
 $(MANIFEST): | $(BUILD_DIR)

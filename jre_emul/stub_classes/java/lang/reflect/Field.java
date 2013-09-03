@@ -16,6 +16,8 @@
  */
 package java.lang.reflect;
 
+import java.lang.annotation.Annotation;
+
 /**
  * Stub implementation of Field.  The actual implementation
  * is in Field.h and Field.m, so the declared fields in this
@@ -24,7 +26,7 @@ package java.lang.reflect;
  *
  * @see Object
  */
-public class Field extends AccessibleObject {
+public class Field extends AccessibleObject implements Member {
 
   public String getName() {
     return null;
@@ -34,11 +36,15 @@ public class Field extends AccessibleObject {
     return 0;
   }
   
-  public Type getType() {
+  public Class<?> getType() {
+    return null;
+  }
+  
+  public Class<?> getGenericType() {
     return null;
   }
 
-  public Class getDeclaringClass() {
+  public Class<?> getDeclaringClass() {
     return null;
   }
   
@@ -89,11 +95,20 @@ public class Field extends AccessibleObject {
   public void set(Object o, long l) throws IllegalArgumentException, IllegalAccessException {}
   public void set(Object o, short s) throws IllegalArgumentException, IllegalAccessException {}
   
+  public <T extends Annotation> T getAnnotation(Class<T> annotationClass) {
+    return null;
+  }
+
+  public Annotation[] getDeclaredAnnotations() {
+    return null;
+  }
+
+  public boolean isSynthetic() {
+    return false;
+  }
+  
   /* Not implemented
-  public annotation.Annotation getAnnotation(Class);
-  public annotation.Annotation[] getDeclaredAnnotations();
   public boolean isEnumConstant();
-  public boolean isSynthetic();
   public String toGenericString();
   */
 }

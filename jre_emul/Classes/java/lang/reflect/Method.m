@@ -60,6 +60,7 @@ static id Box(JavaResult *value, const char *type);
   return method;
 }
 
+// Returns method name.
 - (NSString *)getName {
   return NSStringFromSelector(selector_);
 }
@@ -75,7 +76,11 @@ static id Box(JavaResult *value, const char *type);
 #endif
     @throw exception;
   }
-  return decodeTypeEncoding(*argType);
+  return decodeTypeEncoding(argType);
+}
+
+- (IOSClass *)getGenericReturnType {
+  return [self getReturnType];
 }
 
 - (id)invokeWithId:(id)object
@@ -99,7 +104,7 @@ static id Box(JavaResult *value, const char *type);
     [invocation setArgument:&arg atIndex:i + SKIPPED_ARGUMENTS];
   }
   if (object == nil || [object isKindOfClass:[IOSClass class]]) {
-    [invocation setTarget:class_];
+    [invocation setTarget:class_.objcClass];
   } else {
     [invocation setTarget:object];
   }
@@ -134,6 +139,16 @@ static id Box(JavaResult *value, const char *type);
     }
   }
   return [result stringByAppendingString:@")"];
+}
+
+- (IOSObjectArray *)getDeclaredAnnotations {
+  JavaLangReflectMethod *method = [self getAnnotationsAccessor:[self getName]];
+  return [self getAnnotationsFromAccessor:method];
+}
+
+- (IOSObjectArray *)getParameterAnnotations {
+  JavaLangReflectMethod *method = [self getParameterAnnotationsAccessor:[self getName]];
+  return [self getAnnotationsFromAccessor:method];
 }
 
 // Return a wrapper object for a value with a specified Obj-C type encoding.

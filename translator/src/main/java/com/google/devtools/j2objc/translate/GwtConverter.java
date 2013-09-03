@@ -18,10 +18,11 @@ package com.google.devtools.j2objc.translate;
 
 import com.google.common.annotations.GwtIncompatible;
 import com.google.common.collect.Sets;
-import com.google.devtools.j2objc.J2ObjC;
+import com.google.devtools.j2objc.Options;
 import com.google.devtools.j2objc.types.NodeCopier;
 import com.google.devtools.j2objc.types.Types;
 import com.google.devtools.j2objc.util.ASTUtil;
+import com.google.devtools.j2objc.util.BindingUtil;
 import com.google.devtools.j2objc.util.ErrorReportingASTVisitor;
 
 import org.eclipse.jdt.core.dom.AST;
@@ -30,6 +31,7 @@ import org.eclipse.jdt.core.dom.AbstractTypeDeclaration;
 import org.eclipse.jdt.core.dom.Annotation;
 import org.eclipse.jdt.core.dom.AnonymousClassDeclaration;
 import org.eclipse.jdt.core.dom.Block;
+import org.eclipse.jdt.core.dom.BooleanLiteral;
 import org.eclipse.jdt.core.dom.ConditionalExpression;
 import org.eclipse.jdt.core.dom.Expression;
 import org.eclipse.jdt.core.dom.IBinding;
@@ -40,7 +42,6 @@ import org.eclipse.jdt.core.dom.MethodDeclaration;
 import org.eclipse.jdt.core.dom.MethodInvocation;
 import org.eclipse.jdt.core.dom.SimpleName;
 import org.eclipse.jdt.core.dom.SingleMemberAnnotation;
-import org.eclipse.jdt.core.dom.Statement;
 import org.eclipse.jdt.core.dom.StringLiteral;
 import org.eclipse.jdt.core.dom.TypeDeclarationStatement;
 
@@ -48,8 +49,9 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Updates the Java AST to remove methods annotated with GwtIncompatible,
- * and code bound by GWT.isClient and GWT.isScript tests.
+ * Updates the Java AST to remove code bound by GWT.isClient and
+ * GWT.isScript tests, and translate GWT.create(Class) invocations
+ * into Class.newInstance().
  *
  * @author Tom Ball
  */
@@ -66,7 +68,15 @@ public class GwtConverter extends ErrorReportingASTVisitor {
    * specified GwtIncompatible value, since it takes unchecked strings.
    */
   private static final Set<String> compatibleAPIs = Sets.newHashSet(
-    "proto", "protos", "Class.isInstance", "Class.isAssignableFrom", "java.util.BitSet");
+      "Array.newArray(Class, int)", "Array.newInstance(Class, int)", "Class.isInstance",
+      "Class.isAssignableFrom", "CopyOnWriteArraySet", "InputStream", "java.io.BufferedReader",
+      "java.io.Closeable,java.io.Flushable", "java.io.Writer", "java.lang.reflect",
+      "java.lang.String.getBytes()", "java.lang.System#getProperty", "java.util.ArrayDeque",
+      "java.util.BitSet", "java.util.Locale", "java.util.regex", "java.util.regex.Pattern",
+      "java.util.String(byte[], Charset)", "MapMakerInternalMap", "NavigableMap", "NavigableAsMap",
+      "NavigableSet", "Non-UTF-8 Charset", "OutputStream", "proto", "protos", "Readable",
+      "Reader", "Reader,InputStream", "reflection", "regular expressions", "String.format()",
+      "uses NavigableMap", "Writer", "Writer,OutputStream");
 
   @Override
   public boolean visit(ConditionalExpression node) {
@@ -79,10 +89,31 @@ public class GwtConverter extends ErrorReportingASTVisitor {
   }
 
   @Override
+  public boolean visit(IfStatement node) {
+    if (isGwtTest(node.getExpression())) {
+      if (node.getElseStatement() != null) {
+        // Replace this node with the else statement.
+        ASTUtil.setProperty(node, NodeCopier.copySubtree(node.getAST(), node.getElseStatement()));
+        node.getElseStatement().accept(this);
+      } else {
+        // No else statement, so remove this if statement or replace it
+        // with an empty statement.
+        ASTNode parent = node.getParent();
+        if (parent instanceof Block) {
+          ASTUtil.getStatements((Block) parent).remove(node);
+        } else {
+          ASTUtil.setProperty(node, node.getAST().newEmptyStatement());
+        }
+      }
+      return false;
+    }
+    return true;
+  }
+
+  @Override
   public boolean visit(MethodDeclaration node) {
-    @SuppressWarnings("unchecked")
-    List<IExtendedModifier> modifiers = node.modifiers();
-    if (hasAnnotation(GwtIncompatible.class, modifiers)) {
+    if (Options.stripGwtIncompatibleMethods()
+        && hasAnnotation(GwtIncompatible.class, ASTUtil.getModifiers(node))) {
       // Remove method from its declaring class.
       ASTNode parent = node.getParent();
       if (parent instanceof TypeDeclarationStatement) {
@@ -100,49 +131,26 @@ public class GwtConverter extends ErrorReportingASTVisitor {
   }
 
   @Override
-  public boolean visit(IfStatement node) {
-    if (isGwtTest(node.getExpression())) {
-      if (node.getElseStatement() != null) {
-        // Replace this node with the else statement.
-        ASTUtil.setProperty(node, NodeCopier.copySubtree(node.getAST(), node.getElseStatement()));
-        node.getElseStatement().accept(this);
-      } else {
-        // No else statement, so remove this if statement or replace it
-        // with an empty statement.
-        ASTNode parent = node.getParent();
-        if (parent instanceof Block) {
-          @SuppressWarnings("unchecked")
-          List<Statement> stmts = ((Block) parent).statements();
-          stmts.remove(node);
-        } else {
-          ASTUtil.setProperty(node, node.getAST().newEmptyStatement());
-        }
-      }
-    }
-    return false;
-  }
-
-  @Override
   public boolean visit(MethodInvocation node) {
+    AST ast = node.getAST();
     IMethodBinding method = Types.getMethodBinding(node);
-    @SuppressWarnings("unchecked")
-    List<Expression> args = node.arguments();
+    List<Expression> args = ASTUtil.getArguments(node);
     if (method.getName().equals("create") &&
         method.getDeclaringClass().getQualifiedName().equals(GWT_CLASS) &&
         args.size() == 1) {
       // Convert GWT.create(Foo.class) to Foo.class.newInstance().
-      AST ast = node.getAST();
       SimpleName name = ast.newSimpleName("newInstance");
       node.setName(name);
       Expression clazz = NodeCopier.copySubtree(ast, args.get(0));
       args.remove(0);
       node.setExpression(clazz);
-      IMethodBinding newBinding = Types.findDeclaredMethod(
+      IMethodBinding newBinding = BindingUtil.findDeclaredMethod(
           ast.resolveWellKnownType("java.lang.Class"), "newInstance");
       Types.addBinding(name, newBinding);
       Types.addBinding(node, newBinding);
     } else if (isGwtTest(node)) {
-      J2ObjC.error(node, "GWT.isScript() detected in boolean expression, which is not supported");
+      BooleanLiteral falseLiteral = ASTFactory.newBooleanLiteral(ast, false);
+      ASTUtil.setProperty(node, falseLiteral);
     }
     return true;
   }

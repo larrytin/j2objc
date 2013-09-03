@@ -16,6 +16,8 @@
  */
 package java.lang.reflect;
 
+import java.lang.annotation.Annotation;
+
 /**
  * Stub implementation of Constructor.  The actual implementation
  * is in Constructor.h and Constructor.m, so the declared methods in
@@ -24,7 +26,7 @@ package java.lang.reflect;
  *
  * @see Object
  */
-public class Constructor<T> extends AccessibleObject {
+public class Constructor<T> extends AccessibleObject implements GenericDeclaration, Member {
 
   public String getName() {
     return null;
@@ -34,11 +36,15 @@ public class Constructor<T> extends AccessibleObject {
     return 0;
   }
   
-  public Class<?> getDeclaringClass() {
+  public Class<T> getDeclaringClass() {
     return null;
   }
   
   public Class<?>[] getParameterTypes() {
+    return null;
+  }
+  
+  public Type[] getGenericParameterTypes() {
     return null;
   }
   
@@ -47,25 +53,34 @@ public class Constructor<T> extends AccessibleObject {
     return null;
   }
   
+  public <T extends Annotation> T getAnnotation(Class<T> annotationClass) {
+    return null;
+  }
+
+  public Annotation[] getDeclaredAnnotations() {
+    return null;
+  }
+  
+  public Annotation[][] getParameterAnnotations() {
+    return null;
+  }
+  
+  public TypeVariable<Method>[] getTypeParameters() {
+    return null;
+  }
+  
+  public boolean isSynthetic() {
+    return false;
+  }
+
+  public Class[] getExceptionTypes() {
+    return null;
+  }
+  
   /* Not implemented
-  public Class getDeclaringClass();
-  public int getModifiers();
-  public TypeVariable[] getTypeParameters();
-  public Type getGenericReturnType();
-  public Type[] getGenericParameterTypes();
-  public Class[] getParameterTypes();
-  public Class[] getExceptionTypes();
   public Type[] getGenericExceptionTypes();
-  public boolean equals(Object);
-  public int hashCode();
-  public String toString();
   public String toGenericString();
   public boolean isBridge();
   public boolean isVarArgs();
-  public boolean isSynthetic();
-  public annotation.Annotation getAnnotation(Class);
-  public annotation.Annotation[] getDeclaredAnnotations();
-  public Object getDefaultValue();
-  public annotation.Annotation[][] getParameterAnnotations();
   */
 }
