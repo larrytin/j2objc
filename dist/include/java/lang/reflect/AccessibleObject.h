@@ -19,21 +19,37 @@
 //  Created by Tom Ball on 6/18/12.
 //
 
+#ifndef _AccessibleObject_H_
+#define _AccessibleObject_H_
+
 #import <Foundation/Foundation.h>
 #import "IOSClass.h"
+#import "java/lang/reflect/AnnotatedElement.h"
 
 // Base class for fields, methods, and constructors.
-@interface AccessibleObject : NSObject
+@interface JavaLangReflectAccessibleObject : NSObject < JavaLangReflectAnnotatedElement >
 
 - (BOOL)isAccessible;
 - (void)setAccessibleWithBOOL:(BOOL)b;
++ (void)setAccessibleWithJavaLangReflectAccessibleObjectArray:(IOSObjectArray *)objects
+                                                     withBOOL:(BOOL)b;
+
+- (id)getAnnotationWithIOSClass:(IOSClass *)annotationClass;
+- (BOOL)isAnnotationPresentWithIOSClass:(IOSClass *)annotationClass;
+- (IOSObjectArray *)getAnnotations;
+- (IOSObjectArray *)getDeclaredAnnotations;
+
+// Protected method.
+- (IOSObjectArray *)getAnnotationsFromAccessor:(JavaLangReflectMethod *)method;
 
 @end
 
 // Decodes an Objective-C type encoding, returning the associated iOS class.
 // For example, the type encoding 's' is decoded as JavaLangShort.
-IOSClass *decodeTypeEncoding(char type);
+IOSClass *decodeTypeEncoding(const char *type);
 
 // Return a Java type name for an Objective-C type encoding.  For example,
 // "byte" is returned for 'c', since a Java byte is mapped to a C char.
 NSString *describeTypeEncoding(NSString *type);
+
+#endif // _AccessibleObject_H_

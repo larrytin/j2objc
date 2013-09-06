@@ -19,37 +19,50 @@
 //  Created by Tom Ball on 10/18/11.
 //
 
+#ifndef _IOSClass_H_
+#define _IOSClass_H_
+
 #import <Foundation/Foundation.h>
+#import "java/io/Serializable.h"
+#import "java/lang/reflect/AnnotatedElement.h"
 #import "java/lang/reflect/GenericDeclaration.h"
 #import "java/lang/reflect/Type.h"
 
 @class IOSObjectArray;
-@class JavaLangAnnotationAnnotation;
 @class JavaLangReflectConstructor;
 @class JavaLangReflectField;
 @class JavaLangReflectMethod;
+@protocol JavaLangAnnotationAnnotation;
 
 // A wrapper class for an Objective-C Class or Protocol,
 // similar in functionality to java.lang.Class.  Its
 // methods are limited to those that can be derived
 // from a Class instance, so instances can be created
 // and released as needed.
-@interface IOSClass : NSObject <JavaLangReflectGenericDeclaration,
-    JavaLangReflectType> {
- @private
-  // Only one of these may be set.
-  Class class_;
-  Protocol *protocol_;
+@interface IOSClass : NSObject <JavaLangReflectAnnotatedElement,
+    JavaLangReflectGenericDeclaration, JavaIoSerializable,
+    JavaLangReflectType, NSCopying> {
 }
 
 @property (readonly) Class objcClass;
 @property (readonly) Protocol *objcProtocol;
 
+// IOSClass Getters.
 + (IOSClass *)classWithClass:(Class)cls;
-- (id)initWithClass:(Class)cls;
-
 + (IOSClass *)classWithProtocol:(Protocol *)protocol;
-- (id)initWithProtocol:(Protocol *)protocol;
++ (IOSClass *)arrayClassWithComponentType:(IOSClass *)componentType;
+
+// Primitive class instance getters.
++ (IOSClass *)byteClass;
++ (IOSClass *)charClass;
++ (IOSClass *)doubleClass;
++ (IOSClass *)floatClass;
++ (IOSClass *)intClass;
++ (IOSClass *)longClass;
++ (IOSClass *)shortClass;
++ (IOSClass *)booleanClass;
+
++ (IOSClass *)objectClass;
 
 // Class.newInstance()
 - (id)newInstance NS_RETURNS_RETAINED;
@@ -115,6 +128,9 @@
 // Class.getEnclosingClass()
 - (IOSClass *)getEnclosingClass;
 
+// Class.isMemberClass
+- (BOOL)isMemberClass;
+
 - (BOOL)isArray;
 - (BOOL)isEnum;
 - (BOOL)isInterface;
@@ -124,8 +140,8 @@
 - (IOSObjectArray *)getGenericInterfaces;
 - (IOSObjectArray *)getTypeParameters;
 
-- (JavaLangAnnotationAnnotation *)getAnnotation:(IOSClass *)annotationClass;
-- (BOOL)isAnnotationPresent:(IOSClass *)annotationClass;
+- (id)getAnnotationWithIOSClass:(IOSClass *)annotationClass;
+- (BOOL)isAnnotationPresentWithIOSClass:(IOSClass *)annotationType;
 - (IOSObjectArray *)getAnnotations;
 - (IOSObjectArray *)getDeclaredAnnotations;
 
@@ -146,6 +162,12 @@
 - (IOSObjectArray *)getEnumConstants;
 
 // Internal methods
-- (NSString *)binaryName;
+- (void)collectMethods:(NSMutableDictionary *)methodMap;
+- (JavaLangReflectMethod *)findMethodWithTranslatedName:(NSString *)objcName;
+- (IOSObjectArray *)getInterfacesWithArrayType:(IOSClass *)arrayType;
+extern NSString *IOSClass_GetTranslatedMethodName(
+    NSString *name, IOSObjectArray *paramTypes);
 
 @end
+
+#endif // _IOSClass_H_

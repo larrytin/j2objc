@@ -19,7 +19,11 @@
 //  Created by Tom Ball on 06/18/2012.
 //
 
+#ifndef _JavaLangReflectField_H_
+#define _JavaLangReflectField_H_
+
 #import "AccessibleObject.h"
+#import "java/lang/reflect/Member.h"
 #import <objc/runtime.h>
 
 @class IOSClass;
@@ -28,7 +32,7 @@
 // A native implementation of java.lang.reflect.Field.  Its methods are
 // limited to those that can be derived from the Objective-C runtime,
 // so instances can be created and released as needed.
-@interface JavaLangReflectField : AccessibleObject {
+@interface JavaLangReflectField : JavaLangReflectAccessibleObject < JavaLangReflectMember > {
 @protected
   Ivar ivar_;
   IOSClass *declaringClass_;
@@ -68,4 +72,13 @@
 - (int)getModifiers;
 - (IOSClass *)getType;
 
+// Returns type.
+- (IOSClass *)getGenericType;
+
+// Convert between property and variable names.
++ (NSString *)propertyName:(NSString *)name;
++ (NSString *)variableName:(NSString *)name;
+
 @end
+
+#endif // _JavaLangReflectField_H_
