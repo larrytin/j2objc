@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
   s.name         = "jre_emul"
   s.version      = "0.8.5"
-  s.license      = { :type => 'Apache 2.0', :file => 'COPYING' }
+  s.license      = { :type => 'Apache License, Version 2.0', :file => 'COPYING' }
   s.summary      = "J2ObjC's JRE emulation library, emulates a subset of the Java runtime library."
   s.homepage     = "https://code.google.com/p/j2objc/"
   s.author       = "Google Inc."
@@ -10,7 +10,7 @@ Pod::Spec.new do |s|
   s.default_subspec = 'jre'
 
   s.subspec 'jre' do |jre|
-    jre.source_files = 'jre_emul/Classes/**/*.{m,mm}', 'jre_emul/build_result/Classes/**/*.m'
+    jre.source_files = 'jre_emul/Classes/**/*.{m,mm}', 'jre_emul/apple_apsl/*.{h,m}', 'jre_emul/build_result/Classes/**/*.m'
     jre.exclude_files = 'jre_emul/Classes/*Test.{h,m}'
     jre.preserve_paths = 'dist/include/**/*.h'
 
