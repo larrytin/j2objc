@@ -1,0 +1,31 @@
+# Maven build output.
+target/
+
+# Generated for Eclipse.
+.settings/
+.project
+.classpath
+
+# Created by OS.
+.DS_Store
+
+# Xcode
+*.xcworkspace
+xcuserdata
+
+*.o
+*.a
+*.jar
+
+/dist/*
+!/dist/include/
+/jre_emul/build_result/*
+!/jre_emul/build_result/Classes/
+/annotations/build_result/
+/build_result/
+/cycle_finder/build_result/
+/java_deps/build_result/
+/junit/build_result/*
+!/junit/build_result/junit/
+!/junit/build_result/org/
+/translator/build_result/
