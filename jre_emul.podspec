@@ -7,16 +7,18 @@ Pod::Spec.new do |s|
   s.author       = "Google Inc."
   s.source       = { :git => "https://github.com/goodow/j2objc.git", :tag => "v#{s.version}" }
 
+  # s.frameworks = 'Foundation'
   s.default_subspec = 'jre'
 
   s.subspec 'jre' do |jre|
-    jre.source_files = 'jre_emul/Classes/**/*.{m,mm}', 'jre_emul/apple_apsl/*.{h,m}', 'jre_emul/build_result/Classes/**/*.m'
+    jre.source_files = 'jre_emul/Classes/**/*.{m,mm}', 'jre_emul/apple_apsl/*.{m}', 'jre_emul/build_result/Classes/**/*.m', 'dist/include/**/*.h'
     jre.exclude_files = 'jre_emul/Classes/*Test.{h,m}'
-    jre.preserve_paths = 'dist/include/**/*.h'
+    # jre.preserve_paths = 'dist/include/**/*.h'
+    jre.header_mappings_dir = 'dist/include'
 
     jre.compiler_flags = '-DU_DISABLE_RENAMING=1'
-    jre.xcconfig = { 'GCC_WARN_MISSING_PARENTHESES' => 'NO', 'HEADER_SEARCH_PATHS' => \
-      '"${PODS_ROOT}/jre_emul/dist/include"' }
+    jre.xcconfig = { 'GCC_WARN_MISSING_PARENTHESES' => 'NO' }
+    # , 'OTHER_LDFLAGS' => '-licucore -lstdc++ -ObjC', 'HEADER_SEARCH_PATHS' => '"${PODS_ROOT}/jre_emul/dist/include"' }
   end
 
   s.subspec 'junit' do |junit|

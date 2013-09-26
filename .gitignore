@@ -17,15 +17,8 @@ xcuserdata
 *.a
 *.jar
 
-/dist/*
+/dist/
 !/dist/include/
-/jre_emul/build_result/*
-!/jre_emul/build_result/Classes/
-/annotations/build_result/
-/build_result/
-/cycle_finder/build_result/
-/java_deps/build_result/
-/junit/build_result/*
-!/junit/build_result/junit/
-!/junit/build_result/org/
-/translator/build_result/
+build_result/
+!/jre_emul/build_result/*.m
+!/junit/build_result/*.m

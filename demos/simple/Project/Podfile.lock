@@ -1,0 +1,22 @@
+PODS:
+  - jre_emul (0.8.6.1):
+    - jre_emul/jre
+  - jre_emul/jre (0.8.6.1)
+  - simple (0.8.6.1):
+    - jre_emul (~> 0.8.6.1)
+
+DEPENDENCIES:
+  - jre_emul (from `../../..`)
+  - simple (from `..`)
+
+EXTERNAL SOURCES:
+  jre_emul:
+    :path: ../../..
+  simple:
+    :path: ..
+
+SPEC CHECKSUMS:
+  jre_emul: 91ccb87d9478cece5dff9da576021d91ffa84df1
+  simple: 8a7bf88afe15c74a980a5460a497470b817dc2f8
+
+COCOAPODS: 0.25.0
