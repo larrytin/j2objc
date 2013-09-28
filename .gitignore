@@ -18,7 +18,7 @@ xcuserdata
 *.jar
 
 /dist/
-!/dist/include/
+#!/dist/include/*.h
 build_result/
-!/jre_emul/build_result/*.m
-!/junit/build_result/*.m
+#!/jre_emul/build_result/Classes/*.m
+#!/junit/build_result/*.m

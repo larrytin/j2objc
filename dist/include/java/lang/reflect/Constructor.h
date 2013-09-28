@@ -25,7 +25,7 @@
 #import <Foundation/Foundation.h>
 #import "java/lang/reflect/GenericDeclaration.h"
 #import "java/lang/reflect/Member.h"
-#import "ExecutableMember.h"
+#import "java/lang/reflect/ExecutableMember.h"
 
 // A native implementation of java.lang.reflect.Constructor.  Its methods are
 // limited to those that can be derived from an Objective-C Method instance,
