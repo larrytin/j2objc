@@ -7,11 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		7A7021DEFC4E4F5795C52B24 /* libPods-demo.a in Frameworks */ = {isa = PBXBuildFile; fileRef = BE407401897C49B897370FE0 /* libPods-demo.a */; };
 		82EBB66C82624A46BC1B0BAD /* libPods.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 021FB04F8A214511A3AC6345 /* libPods.a */; };
-		8D358A2217F7DDA50037B85B /* SimpleDemo.m in Sources */ = {isa = PBXBuildFile; fileRef = 8D358A1917F7DDA50037B85B /* SimpleDemo.m */; };
-		8D358A2317F7DDA50037B85B /* GDNoPackage.m in Sources */ = {isa = PBXBuildFile; fileRef = 8D358A1B17F7DDA50037B85B /* GDNoPackage.m */; };
-		8D358A2417F7DDA50037B85B /* SimpleDemoTest.m in Sources */ = {isa = PBXBuildFile; fileRef = 8D358A2117F7DDA50037B85B /* SimpleDemoTest.m */; };
 		8DC9D38817F327D200FAEE0A /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8DC9D38717F327D200FAEE0A /* Foundation.framework */; };
 		8DEC35EA17F3E317002E3C86 /* simple.m in Sources */ = {isa = PBXBuildFile; fileRef = 8DEC35E917F3E317002E3C86 /* simple.m */; };
 /* End PBXBuildFile section */
@@ -29,16 +25,11 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		01B0A43650FB4B6991B1829F /* Pods-demo.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-demo.xcconfig"; path = "Pods/Pods-demo.xcconfig"; sourceTree = "<group>"; };
 		021FB04F8A214511A3AC6345 /* libPods.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libPods.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		196C531C63794536892B2915 /* Pods.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = Pods.xcconfig; path = Pods/Pods.xcconfig; sourceTree = "<group>"; };
-		8D358A1817F7DDA50037B85B /* SimpleDemo.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SimpleDemo.h; sourceTree = "<group>"; };
-		8D358A1917F7DDA50037B85B /* SimpleDemo.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SimpleDemo.m; sourceTree = "<group>"; };
-		8D358A1A17F7DDA50037B85B /* GDNoPackage.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = GDNoPackage.h; sourceTree = "<group>"; };
-		8D358A1B17F7DDA50037B85B /* GDNoPackage.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GDNoPackage.m; sourceTree = "<group>"; };
 		8D358A2017F7DDA50037B85B /* SimpleDemoTest.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = SimpleDemoTest.h; sourceTree = "<group>"; };
 		8D358A2117F7DDA50037B85B /* SimpleDemoTest.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = SimpleDemoTest.m; sourceTree = "<group>"; };
-		8DC9D38417F327D200FAEE0A /* libdemo.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = libdemo.a; sourceTree = BUILT_PRODUCTS_DIR; };
+		8DC9D38417F327D200FAEE0A /* liblib.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = liblib.a; sourceTree = BUILT_PRODUCTS_DIR; };
 		8DC9D38717F327D200FAEE0A /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		8DEC35E717F3E317002E3C86 /* simple-Prefix.pch */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = "simple-Prefix.pch"; sourceTree = "<group>"; };
 		8DEC35E817F3E317002E3C86 /* simple.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = simple.h; sourceTree = "<group>"; };
@@ -53,7 +44,6 @@
 			files = (
 				8DC9D38817F327D200FAEE0A /* Foundation.framework in Frameworks */,
 				82EBB66C82624A46BC1B0BAD /* libPods.a in Frameworks */,
-				7A7021DEFC4E4F5795C52B24 /* libPods-demo.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -63,46 +53,10 @@
 		8D358A1317F7DDA50037B85B /* Classes */ = {
 			isa = PBXGroup;
 			children = (
-				8D358A1417F7DDA50037B85B /* generated */,
 				8D358A1C17F7DDA50037B85B /* test_generated */,
 			);
 			name = Classes;
 			path = ../Classes;
-			sourceTree = "<group>";
-		};
-		8D358A1417F7DDA50037B85B /* generated */ = {
-			isa = PBXGroup;
-			children = (
-				8D358A1517F7DDA50037B85B /* com */,
-				8D358A1A17F7DDA50037B85B /* GDNoPackage.h */,
-				8D358A1B17F7DDA50037B85B /* GDNoPackage.m */,
-			);
-			path = generated;
-			sourceTree = "<group>";
-		};
-		8D358A1517F7DDA50037B85B /* com */ = {
-			isa = PBXGroup;
-			children = (
-				8D358A1617F7DDA50037B85B /* goodow */,
-			);
-			path = com;
-			sourceTree = "<group>";
-		};
-		8D358A1617F7DDA50037B85B /* goodow */ = {
-			isa = PBXGroup;
-			children = (
-				8D358A1717F7DDA50037B85B /* j2objc */,
-			);
-			path = goodow;
-			sourceTree = "<group>";
-		};
-		8D358A1717F7DDA50037B85B /* j2objc */ = {
-			isa = PBXGroup;
-			children = (
-				8D358A1817F7DDA50037B85B /* SimpleDemo.h */,
-				8D358A1917F7DDA50037B85B /* SimpleDemo.m */,
-			);
-			path = j2objc;
 			sourceTree = "<group>";
 		};
 		8D358A1C17F7DDA50037B85B /* test_generated */ = {
@@ -146,14 +100,13 @@
 				8DC9D38617F327D200FAEE0A /* Frameworks */,
 				8DC9D38517F327D200FAEE0A /* Products */,
 				196C531C63794536892B2915 /* Pods.xcconfig */,
-				01B0A43650FB4B6991B1829F /* Pods-demo.xcconfig */,
 			);
 			sourceTree = "<group>";
 		};
 		8DC9D38517F327D200FAEE0A /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				8DC9D38417F327D200FAEE0A /* libdemo.a */,
+				8DC9D38417F327D200FAEE0A /* liblib.a */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -181,9 +134,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		8DC9D38317F327D200FAEE0A /* demo */ = {
+		8DC9D38317F327D200FAEE0A /* lib */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 8DC9D39217F327D200FAEE0A /* Build configuration list for PBXNativeTarget "demo" */;
+			buildConfigurationList = 8DC9D39217F327D200FAEE0A /* Build configuration list for PBXNativeTarget "lib" */;
 			buildPhases = (
 				67DCBA569B5942F68D8C8D1F /* Check Pods Manifest.lock */,
 				8DC9D38017F327D200FAEE0A /* Sources */,
@@ -195,9 +148,9 @@
 			);
 			dependencies = (
 			);
-			name = demo;
+			name = lib;
 			productName = simple;
-			productReference = 8DC9D38417F327D200FAEE0A /* libdemo.a */;
+			productReference = 8DC9D38417F327D200FAEE0A /* liblib.a */;
 			productType = "com.apple.product-type.library.static";
 		};
 /* End PBXNativeTarget section */
@@ -221,7 +174,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				8DC9D38317F327D200FAEE0A /* demo */,
+				8DC9D38317F327D200FAEE0A /* lib */,
 			);
 		};
 /* End PBXProject section */
@@ -254,7 +207,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"${SRCROOT}/Pods/Pods-demo-resources.sh\"\n";
+			shellScript = "\"${SRCROOT}/Pods/Pods-resources.sh\"\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */
@@ -264,9 +217,6 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				8D358A2317F7DDA50037B85B /* GDNoPackage.m in Sources */,
-				8D358A2217F7DDA50037B85B /* SimpleDemo.m in Sources */,
-				8D358A2417F7DDA50037B85B /* SimpleDemoTest.m in Sources */,
 				8DEC35EA17F3E317002E3C86 /* simple.m in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -329,7 +279,7 @@
 		};
 		8DC9D39317F327D200FAEE0A /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 01B0A43650FB4B6991B1829F /* Pods-demo.xcconfig */;
+			baseConfigurationReference = 196C531C63794536892B2915 /* Pods.xcconfig */;
 			buildSettings = {
 				DSTROOT = /tmp/simple.dst;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
@@ -342,7 +292,7 @@
 		};
 		8DC9D39417F327D200FAEE0A /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 01B0A43650FB4B6991B1829F /* Pods-demo.xcconfig */;
+			baseConfigurationReference = 196C531C63794536892B2915 /* Pods.xcconfig */;
 			buildSettings = {
 				DSTROOT = /tmp/simple.dst;
 				GCC_PRECOMPILE_PREFIX_HEADER = YES;
@@ -365,7 +315,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		8DC9D39217F327D200FAEE0A /* Build configuration list for PBXNativeTarget "demo" */ = {
+		8DC9D39217F327D200FAEE0A /* Build configuration list for PBXNativeTarget "lib" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				8DC9D39317F327D200FAEE0A /* Debug */,

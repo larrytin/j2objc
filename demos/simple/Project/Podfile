@@ -1,8 +1,9 @@
 platform :ios, '7.0'
 
-# podspec :path => '../simple.podspec'
-pod 'simple', :path => '..'
-# To use the master branch of the repo:
-pod 'jre_emul', :git => 'https://github.com/goodow/j2objc.git'
-# Using the files from a local path.
+# pod 'jre_emul', :git => '../../..'
+# xcconfig's HEADER_SEARCH_PATHS won't work in local path mode.
 # pod 'jre_emul', :path => '../../..'
+
+pod 'simple', :path => '..'
+# Next line needs to manually import generated sources to Xcode.
+# podspec :path => '../simple.podspec'

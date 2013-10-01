@@ -22,7 +22,7 @@
 #ifndef _JavaLangReflectField_H_
 #define _JavaLangReflectField_H_
 
-#import "java/lang/reflect/AccessibleObject.h"
+#import "AccessibleObject.h"
 #import "java/lang/reflect/Member.h"
 #import <objc/runtime.h>
 

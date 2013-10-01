@@ -1,22 +1,19 @@
 PODS:
-  - jre_emul (0.8.5):
+  - jre_emul (0.8.6.1):
     - jre_emul/jre
-  - jre_emul/jre (0.8.5)
+  - jre_emul/jre (0.8.6.1)
   - simple (0.8.6.1):
-    - jre_emul
+    - jre_emul (= 0.8.6.1)
 
 DEPENDENCIES:
-  - jre_emul (from `https://github.com/goodow/j2objc.git`)
   - simple (from `..`)
 
 EXTERNAL SOURCES:
-  jre_emul:
-    :git: https://github.com/goodow/j2objc.git
   simple:
     :path: ..
 
 SPEC CHECKSUMS:
-  jre_emul: 3cb771b6875cbebf6ace5149b0366968163d5a5a
-  simple: de8b5d529980a34210f2f04f9d72f6e881779868
+  jre_emul: 164fdb77aa391efa12c89032862c07cde22dbf4d
+  simple: 40deb7b652335530dc5fca1679be4ace4c13b070
 
 COCOAPODS: 0.25.0
