@@ -1,19 +1,23 @@
 PODS:
-  - jre_emul (0.8.6.1):
-    - jre_emul/jre
-  - jre_emul/jre (0.8.6.1)
+  - J2ObjC (0.8.6.1):
+    - J2ObjC/lib/jre
+  - J2ObjC/lib/jre (0.8.6.1)
   - simple (0.8.6.1):
-    - jre_emul (= 0.8.6.1)
+    - J2ObjC (= 0.8.6.1)
 
 DEPENDENCIES:
+  - J2ObjC (from `/Users/retechretech/dev/tools/lib/j2objc`, branch `lib`)
   - simple (from `..`)
 
 EXTERNAL SOURCES:
+  J2ObjC:
+    :branch: lib
+    :git: /Users/retechretech/dev/tools/lib/j2objc
   simple:
     :path: ..
 
 SPEC CHECKSUMS:
-  jre_emul: 164fdb77aa391efa12c89032862c07cde22dbf4d
-  simple: 40deb7b652335530dc5fca1679be4ace4c13b070
+  J2ObjC: a814afe094911e37eec7bc64573b5bdb5ed3a86f
+  simple: 939b7a8df966f32c8ec0a8d02384f2624e764e47
 
-COCOAPODS: 0.25.0
+COCOAPODS: 0.26.2

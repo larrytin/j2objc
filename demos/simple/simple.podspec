@@ -8,7 +8,7 @@ Pod::Spec.new do |s|
   s.source_files = 'Classes/generated/**/*.{h,m}'
   s.header_mappings_dir = 'Classes/generated'
   
-  s.dependency 'jre_emul', '0.8.6.1'
+  s.dependency 'J2ObjC', '0.8.6.1'
   # Pods-simple target need next line.
-  s.xcconfig = { 'HEADER_SEARCH_PATHS' => '"${PODS_ROOT}/jre_emul/dist/include"' }
+  s.xcconfig = { 'HEADER_SEARCH_PATHS' => '"${PODS_ROOT}/J2ObjC/dist/include"' }
 end
